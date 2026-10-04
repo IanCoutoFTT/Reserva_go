@@ -51,7 +51,7 @@ export default function FavoritesScreen() {
           <Text style={styles.emptyIcon}>❤️</Text>
           <Text style={styles.emptyText}>Nenhum favorito ainda</Text>
           <Text style={styles.emptySub}>
-            Clique no coração nas cabanas para salvá-las aqui e planejar sua próxima viagem.
+            Clique no coração nas cabanas para salvar aqui nos Seus Favoritos.
           </Text>
         </View>
       )}
