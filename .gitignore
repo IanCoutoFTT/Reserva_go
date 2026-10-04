@@ -1,0 +1,48 @@
+# dependencias
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# pastas nativas geradas (prebuild / dev build)
+/android
+/ios
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+
+# Metro
+.metro-health-check*
+
+# testes
+coverage/
+
+# logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# variaveis de ambiente e segredos
+.env
+.env.*
+!.env.example
+ID-cliente.txt
+link-API.txt
+supabase-google.txt
+
+# TypeScript
+*.tsbuildinfo
+
+# sistema
+.DS_Store
+Thumbs.db
