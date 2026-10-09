@@ -28,6 +28,13 @@ export async function getPropertyById(id: string): Promise<ServiceResult<Propert
   return toResult(data, error);
 }
 
+/** Busca várias cabanas de uma vez por id (ex.: aba Favoritos). RLS já esconde as que não estão ativas. */
+export async function getPropertiesByIds(ids: string[]): Promise<ServiceResult<Property[]>> {
+  if (ids.length === 0) return { data: [], error: null };
+  const { data, error } = await supabase.from('properties').select('*').in('id', ids);
+  return toResult(data, error);
+}
+
 export async function getPropertiesByHost(hostId: string): Promise<ServiceResult<Property[]>> {
   const { data, error } = await supabase
     .from('properties')
@@ -70,6 +77,19 @@ export async function updateProperty(id: string, dados: UpdatableProperty): Prom
  * dedicado de "removido pelo dono" - registrado como limitação conhecida.
  */
 export async function deleteProperty(id: string): Promise<ServiceResult<Property>> {
+  // 'removido' (supabase/migrations/006) distingue "o dono excluiu" de
+  // "o admin reprovou" ('inativo') - antes os dois eram o mesmo valor e a cabana
+  // excluída continuava na lista do anfitrião marcada como "Reprovado".
+  const removed = await supabase
+    .from('properties')
+    .update({ status: 'removido' })
+    .eq('id', id)
+    .select()
+    .single();
+  if (!removed.error) return toResult(removed.data, null);
+
+  // Banco ainda sem a migration 006 (valor 'removido' não existe no enum):
+  // cai no comportamento antigo em vez de impedir a exclusão.
   const { data, error } = await supabase
     .from('properties')
     .update({ status: 'inativo' })
