@@ -49,8 +49,8 @@ Antes de rodar o projeto, instale:
 
 ```bash
 # 1. Clonar o repositório
-git clone https://github.com/JuniorPrado99/ReservaGO.git
-cd ReservaGO
+git clone https://github.com/IanCoutoFTT/Reserva_go.git
+cd Reserva_go
 
 # 2. Instalar dependências
 npm install
@@ -165,7 +165,7 @@ npm test
 npm run test:watch
 ```
 
-O projeto usa **Jest** (`jest-expo` + Testing Library) — hoje com 12 suítes e 62 testes, cobrindo os `context/` principais (`AuthContext`, `BookingContext`, `FavoritesContext`) e quase toda a camada `services/` de acesso ao Supabase (todos os testes mockam o Supabase, nenhum bate em rede/banco real).
+O projeto usa **Jest** (`jest-expo` + Testing Library) — hoje com 15 suítes e 109 testes, cobrindo os `context/` principais (`AuthContext`, `BookingContext`, `FavoritesContext`) e quase toda a camada `services/` de acesso ao Supabase (todos os testes mockam o Supabase, nenhum bate em rede/banco real).
 
 ---
 
