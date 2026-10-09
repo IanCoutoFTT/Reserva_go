@@ -1,7 +1,7 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, StyleSheet, Text, View, FlatList, Image,
+  ActivityIndicator, Alert, StyleSheet, Text, View, FlatList, Image,
   TouchableOpacity, Modal, TextInput, KeyboardAvoidingView,
   Platform, ScrollView,
 } from 'react-native';
@@ -173,8 +173,15 @@ export default function MessagesScreen() {
   // recebe a entrada fixada no topo (ver loadConversations/openChat).
   const isSupportAgent = user?.role === 'admin';
 
-  const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS);
+  const router = useRouter();
+  // Conversas de exemplo (INITIAL_CHATS) só pro login estático de teste visual.
+  // Visitante vê um convite de login e usuário real vê só dados reais (ou um
+  // erro com "tentar de novo") - antes todo mundo via "Carlos"/"Ana" falsos.
+  const [chats, setChats] = useState<Chat[]>(isStaticUser ? INITIAL_CHATS : []);
   const [loading, setLoading] = useState(isConnected);
+  const [loadError, setLoadError] = useState(false);
+  const hasLoadedConversationsRef = useRef(false);
+  const messagesScrollRef = useRef<ScrollView>(null);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
   const [inputText, setInputText] = useState('');
   const activeChatIdRef = useRef<string | null>(null);
@@ -192,19 +199,31 @@ export default function MessagesScreen() {
     activeChatIdRef.current = activeChat?.id ?? null;
   }, [activeChat?.id]);
 
+  // Troca de conta/modo (ex.: sair do login estático): recomeça a lista do zero.
+  useEffect(() => {
+    hasLoadedConversationsRef.current = false;
+    setLoadError(false);
+    setChats(isStaticUser ? INITIAL_CHATS : []);
+  }, [user?.id, isStaticUser]);
+
   const loadConversations = () => {
     if (!isConnected || !user?.id) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Só mostra o spinner de tela cheia na primeira carga - recarregar a cada
+    // mensagem recebida (Realtime) fazia a lista inteira piscar.
+    if (!hasLoadedConversationsRef.current) setLoading(true);
     Promise.all([getConversations(user.id), getUnreadConversationIds(user.id), getSupportAdminId()]).then(
       ([convResult, unreadResult, adminResult]) => {
         if (convResult.error || !convResult.data) {
-          console.log('[messages] getConversations falhou, usando mock local ->', convResult.error);
+          console.log('[messages] getConversations falhou ->', convResult.error);
+          if (!hasLoadedConversationsRef.current) setLoadError(true);
           setLoading(false);
           return;
         }
+        hasLoadedConversationsRef.current = true;
+        setLoadError(false);
         const unreadIds = new Set(unreadResult.data ?? []);
         const supportAdminId = adminResult.data;
         const realChats = convResult.data.map((c) => mapConversation(c, user.id, unreadIds, supportAdminId));
@@ -461,6 +480,9 @@ export default function MessagesScreen() {
       ({ data, error }) => {
         if (error || !data) {
           console.log('[messages] sendMessage falhou ->', error);
+          // Devolve o texto pro campo (antes a mensagem sumia sem nenhum aviso).
+          setInputText((current) => current || text);
+          Alert.alert('Mensagem não enviada', 'Não foi possível enviar agora. Verifique sua conexão e tente de novo.');
           return;
         }
         setActiveChat((prev) => {
@@ -483,9 +505,27 @@ export default function MessagesScreen() {
         )}
       </View>
 
-      {loading ? (
+      {!user ? (
+        <View style={styles.emptyContainer}>
+          <Mail size={48} color="#E5E7EB" />
+          <Text style={styles.emptyTitle}>Entre para ver suas mensagens</Text>
+          <Text style={styles.emptySub}>Faça login para conversar com anfitriões e com o suporte.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => router.push('/login')}>
+            <Text style={styles.retryBtnText}>Entrar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <View style={styles.emptyContainer}>
           <ActivityIndicator size="large" color="#2D5A27" />
+        </View>
+      ) : loadError ? (
+        <View style={styles.emptyContainer}>
+          <Mail size={48} color="#E5E7EB" />
+          <Text style={styles.emptyTitle}>Não foi possível carregar</Text>
+          <Text style={styles.emptySub}>Verifique sua conexão e tente novamente.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={loadConversations}>
+            <Text style={styles.retryBtnText}>Tentar de novo</Text>
+          </TouchableOpacity>
         </View>
       ) : chats.length > 0 ? (
         <FlatList
@@ -532,7 +572,7 @@ export default function MessagesScreen() {
         </View>
       )}
 
-      <Modal visible={!!activeChat} animationType="slide">
+      <Modal visible={!!activeChat} animationType="slide" onRequestClose={() => setActiveChat(null)}>
         <KeyboardAvoidingView
           style={{ flex: 1, backgroundColor: '#fff' }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -558,8 +598,10 @@ export default function MessagesScreen() {
           </View>
 
           <ScrollView
+            ref={messagesScrollRef}
             contentContainerStyle={styles.messagesList}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => messagesScrollRef.current?.scrollToEnd({ animated: false })}
           >
             {activeChat?.messages.map((msg) => (
               <View
@@ -651,6 +693,8 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
+  retryBtn: { marginTop: 20, backgroundColor: '#2D5A27', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryBtnText: { color: '#fff', fontWeight: 'bold' },
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
     paddingTop: 60,

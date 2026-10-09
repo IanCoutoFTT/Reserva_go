@@ -3,6 +3,7 @@ import Colors from '@/constants/Colors';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
  * Componente auxiliar para renderizar os ícones da barra inferior
@@ -16,6 +17,7 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -24,10 +26,12 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         // Mantém o título no topo por padrão (exceto na Home)
         headerShown: false,
-        tabBarStyle: { 
-          height: 65, 
-          paddingBottom: 10,
-          paddingTop: 5 
+        // Soma a área segura de baixo (barra de gestos do Android): com altura fixa
+        // de 65, o indicador de gestos cobria o rótulo "Mensagens".
+        tabBarStyle: {
+          height: 65 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
+          paddingTop: 5,
         }
       }}>
       

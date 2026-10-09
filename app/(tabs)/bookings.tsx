@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../services/bookingService';
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
+import { PropertyImage } from '../../components/PropertyImage';
 
 // Linha unificada de exibição - pode vir de uma reserva real (Supabase,
 // com id de verdade) ou de uma reserva local (BookingContext/AsyncStorage,
@@ -146,7 +147,10 @@ export default function BookingsScreen() {
   };
 
   const renderBookingItem = ({ item }: { item: BookingRow }) => {
-    const isActive = item.status === 'reservada';
+    // Estadia que já terminou: nada grava 'realizada' no banco, então tratamos
+    // pela data - sem botão Cancelar e com o rótulo "Realizada".
+    const stayEnded = !!item.checkOutDate && item.checkOutDate < new Date();
+    const isActive = item.status === 'reservada' && !stayEnded;
     const canReview =
       item.isReal && item.status !== 'cancelada' && !!item.checkOutDate && item.checkOutDate < new Date();
 
@@ -161,7 +165,7 @@ export default function BookingsScreen() {
           })
         }
       >
-        <Image source={{ uri: item.propertyImage ?? undefined }} style={styles.cardImage} />
+        <PropertyImage uri={item.propertyImage} style={styles.cardImage} iconSize={28} />
         <View style={styles.cardInfo}>
           <View style={styles.statusContainer}>
             <View style={[styles.statusDot, { backgroundColor: isActive ? '#2D5A27' : '#9CA3AF' }]} />

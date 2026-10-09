@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { Listing, useListings } from '../context/ListingContext';
+import { PropertyImage } from '../components/PropertyImage';
+import { formatCurrency } from '../lib/format';
 import { deleteProperty, getPropertiesByHost } from '../services/propertyService';
 import type { CabinStatus, Property as DbProperty } from '../services/types';
 
@@ -24,6 +26,7 @@ function mapPropertyToCabinRow(p: DbProperty): CabinRow {
     category: p.category,
     subCategory: p.sub_category ?? undefined,
     hostId: p.owner_id,
+    amenities: p.amenities ?? [],
     status: p.status,
   };
 }
@@ -33,6 +36,7 @@ const STATUS_LABELS: Record<CabinStatus, { label: string; color: string; bg: str
   pendente: { label: 'Em análise', color: '#92400E', bg: '#FEF3C7' },
   suspenso: { label: 'Suspenso', color: '#991B1B', bg: '#FEE2E2' },
   inativo: { label: 'Reprovado', color: '#374151', bg: '#F3F4F6' },
+  removido: { label: 'Removido', color: '#374151', bg: '#F3F4F6' },
 };
 
 export default function MyCabinsScreen() {
@@ -59,7 +63,8 @@ export default function MyCabinsScreen() {
         console.log('[my-cabins] getPropertiesByHost falhou, usando fallback local ->', error);
         setRemoteCabins(null);
       } else {
-        setRemoteCabins(data.map(mapPropertyToCabinRow));
+        // Cabanas que o próprio anfitrião excluiu (status 'removido') não voltam pra lista.
+        setRemoteCabins(data.filter((p) => p.status !== 'removido').map(mapPropertyToCabinRow));
       }
       setLoading(false);
     });
@@ -115,6 +120,7 @@ export default function MyCabinsScreen() {
         isolationLevel: cabin.isolationLevel ?? '',
         category: cabin.category ?? '',
         subCategory: cabin.subCategory ?? '',
+        amenities: (cabin.amenities ?? []).join('|'),
       },
     });
   };
@@ -133,8 +139,8 @@ export default function MyCabinsScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <TrendingUp size={24} color="#2D5A27" />
-            <Text style={styles.statValue}>R$ {totalEarnings.toLocaleString('pt-BR')}</Text>
-            <Text style={styles.statLabel}>Ganhos estimados</Text>
+            <Text style={styles.statValue}>{formatCurrency(totalEarnings)}</Text>
+            <Text style={styles.statLabel}>Ganhos estimados (preço × reservas)</Text>
           </View>
           <View style={styles.statCard}>
             <CalendarDays size={24} color="#F59E0B" />
@@ -161,10 +167,7 @@ export default function MyCabinsScreen() {
         )}
 
         {!loading && listings.map((cabin) => (          <View key={cabin.id} style={styles.cabinCard}>
-            <Image
-              source={{ uri: cabin.image || 'https://images.unsplash.com/photo-1542718610-a1d656d1884c?w=400&q=80' }}
-              style={styles.cabinImage}
-            />
+            <PropertyImage uri={cabin.image} style={styles.cabinImage} iconSize={28} />
 
             <View style={styles.cabinInfo}>
               <Text style={styles.cabinTitle} numberOfLines={1}>{cabin.title}</Text>
@@ -175,7 +178,7 @@ export default function MyCabinsScreen() {
               </View>
 
               <Text style={styles.cabinPrice}>
-                {cabin.price ? `R$ ${cabin.price}` : 'Preço não informado'}
+                {cabin.price ? formatCurrency(Number(cabin.price)) : 'Preço não informado'}
                 {cabin.price ? <Text style={styles.perNight}> / noite</Text> : null}
               </Text>
 

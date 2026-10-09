@@ -326,4 +326,23 @@ describe('AuthContext', () => {
 
     expect((supabase.from as jest.Mock).mock.calls.length).toBe(fromCallsBefore);
   });
+
+  it('conta excluída (perfil escondido pela RLS, PGRST116): encerra a sessão em vez de entrar como hóspede', async () => {
+    (supabase.from as jest.Mock).mockReturnValueOnce({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116', message: 'no rows' } }),
+    });
+    mockOnAuthStateChange.mockImplementation((callback: (event: string, session: any) => void) => {
+      callback('SIGNED_IN', { user: { id: 'deleted-uuid', email: 'x@y.com', user_metadata: {} } });
+      return { data: { subscription: { unsubscribe: jest.fn() } } };
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.user).toBeNull();
+    expect(mockSignOut).toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('Conta indisponível', expect.any(String));
+  });
 });
