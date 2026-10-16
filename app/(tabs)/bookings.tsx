@@ -232,9 +232,9 @@ export default function BookingsScreen() {
           <View style={styles.emptyIconCircle}>
             <Calendar size={40} color="#2D5A27" />
           </View>
-          <Text style={styles.emptyTitle}>Ainda não tens reservas</Text>
+          <Text style={styles.emptyTitle}>Você ainda não tem reservas</Text>
           <Text style={styles.emptySub}>
-            As tuas próximas aventuras aparecerão aqui assim que clicares em reservar.
+            Suas próximas aventuras aparecerão aqui assim que você clicar em reservar.
           </Text>
         </View>
       )}
