@@ -105,14 +105,20 @@ export default function HomeScreen() {
     selectedIsolation.id !== 'todos',
   ].filter(Boolean).length;
 
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (isSearching) { cancelSearch(); return true; }
-      if (isExploreAll) { setIsExploreAll(false); return true; }
-      return false;
-    });
-    return () => backHandler.remove();
-  }, [isSearching, isExploreAll]);
+  // useFocusEffect (não useEffect): a aba Explorar continua montada por baixo
+  // quando outra tela (ex.: detalhes) é aberta por cima. Com useEffect, o botão
+  // "voltar" do Android ainda caía neste handler e cancelava a busca escondida
+  // em vez de fechar a tela que o usuário estava vendo.
+  useFocusEffect(
+    useCallback(() => {
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (isSearching) { cancelSearch(); return true; }
+        if (isExploreAll) { setIsExploreAll(false); return true; }
+        return false;
+      });
+      return () => backHandler.remove();
+    }, [isSearching, isExploreAll])
+  );
 
   const cancelSearch = () => {
     setSearchQuery('');

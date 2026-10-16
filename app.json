@@ -34,7 +34,13 @@
     "plugins": [
       "expo-router",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O ReservaGO precisa acessar suas fotos para você escolher a foto de perfil e as fotos da sua cabana."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

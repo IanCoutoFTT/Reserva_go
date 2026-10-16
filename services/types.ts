@@ -9,7 +9,7 @@ export type PayMethod = 'pix' | 'card';
 export type NotificationType = 'reserva' | 'mensagem' | 'promocao' | 'aviso';
 export type IsolationLevel = 'urbano' | 'semi' | 'isolado' | 'extremo';
 export type ReportStatus = 'pendente' | 'em_analise' | 'resolvido' | 'arquivado';
-export type CabinStatus = 'ativo' | 'pendente' | 'suspenso' | 'inativo';
+export type CabinStatus = 'ativo' | 'pendente' | 'suspenso' | 'inativo' | 'removido';
 
 // ── Retorno uniforme de toda função de service ──────────────────────────
 export interface ServiceResult<T> {

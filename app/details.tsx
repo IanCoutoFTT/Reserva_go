@@ -3,13 +3,9 @@ import {
     Check,
     ChevronLeft,
     ChevronRight,
-    Flame,
-    Footprints,
     Heart,
     MapPin,
     Star,
-    Trees,
-    Wifi,
     X,
 } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
@@ -27,6 +23,8 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PropertyImage } from '../components/PropertyImage';
 import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingContext';
 import { useFavorites } from '../context/FavoritesContext';
@@ -51,22 +49,22 @@ const ISOLATION_MAP: Record<string, { emoji: string; title: string; sub: string 
   urbano: {
     emoji: '🏘️',
     title: 'Vizinhos próximos',
-    sub: 'Área residencial ou vila. Vizinhos a menos de 500m de distância.',
+    sub: 'Área residencial ou vila, vizinhos a menos de 500m.',
   },
   semi: {
     emoji: '🌲',
     title: 'Alguma privacidade',
-    sub: 'Área rural tranquila, vizinhos a mais de 1km. Boa para descanso.',
+    sub: 'Área rural tranquila, vizinhos a mais de 1km.',
   },
   isolado: {
     emoji: '🏕️',
-    title: 'Você é a única alma aqui',
-    sub: 'Vizinho mais próximo a mais de 3km, dentro de uma reserva particular.',
+    title: 'Bem isolado',
+    sub: 'Vizinho mais próximo a mais de 3km. Silêncio total.',
   },
   extremo: {
     emoji: '🌄',
-    title: 'Você é a única alma aqui',
-    sub: 'O vizinho mais próximo fica a 4.5 km de distância, dentro de uma reserva particular de 20 hectares.',
+    title: 'Isolamento total',
+    sub: 'Acesso restrito. Natureza selvagem ao redor.',
   },
 };
 
@@ -76,14 +74,6 @@ const DEFAULT_ISOLATION = {
   sub: 'O anfitrião não informou o nível de isolamento desta cabana.',
 };
 
-// Usadas só quando a busca de reviews reais falha (query com erro) - não
-// quando a propriedade genuinamente não tem nenhuma review ainda (nesse
-// caso mostramos um estado vazio de verdade, não isso).
-const FALLBACK_REVIEWS = [
-  { id: '1', author: 'Fernanda M.', avatar: 'https://i.pravatar.cc/100?img=1', rating: 5, date: 'Mar 2025', comment: 'Lugar incrível, silêncio total e natureza por todos os lados. Voltaremos com certeza!' },
-  { id: '2', author: 'Rafael S.', avatar: 'https://i.pravatar.cc/100?img=3', rating: 5, date: 'Fev 2025', comment: 'Estrutura impecável, trilha privativa sensacional. Superou todas as expectativas.' },
-];
-
 function toISODateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -91,18 +81,21 @@ function toISODateString(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-const AMENITIES = [
-  { icon: Wifi, label: 'Wi-Fi de alta velocidade' },
-  { icon: Flame, label: 'Lareira a lenha' },
-  { icon: Footprints, label: 'Trilha privativa' },
-  { icon: Trees, label: 'Reserva particular' },
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ];
+
+function isSameDay(a: Date | null, b: Date): boolean {
+  return !!a && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
 
 export default function DetailsScreen() {
   const router = useRouter();
   const { addBooking } = useBookings();
   const { user } = useAuth();
   const { favorites, toggleFavorite } = useFavorites();
+  const insets = useSafeAreaInsets();
 
   const { id, title, price, location, description, image, isolationLevel } = useLocalSearchParams();
   const isFav = favorites.includes(id as string);
@@ -207,6 +200,12 @@ export default function DetailsScreen() {
   const [checkInDate, setCheckInDate] = useState<Date | null>(null);
   const [checkOutDate, setCheckOutDate] = useState<Date | null>(null);
   const [calendarVisible, setCalendarVisible] = useState(false);
+  // Mês exibido no calendário (sempre dia 1). Antes só existia o mês atual,
+  // sem como avançar - não dava pra reservar nada além do fim do mês.
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [selectingDate, setSelectingDate] = useState<'checkIn' | 'checkOut'>('checkIn');
   const [payMethod, setPayMethod] = useState<'pix' | 'card'>('pix');
 
@@ -241,6 +240,10 @@ export default function DetailsScreen() {
       ]);
       return;
     }
+    if (property && property.owner_id === user.id) {
+      Alert.alert('Essa é a sua cabana', 'Você não pode reservar o seu próprio anúncio.');
+      return;
+    }
     setStep('dates');
     setModalVisible(true);
   };
@@ -260,6 +263,17 @@ export default function DetailsScreen() {
   };
 
   const confirmBooking = async () => {
+    // Usuário real nunca cai no registro local: antes, se a cabana não tivesse
+    // carregado do servidor (sem rede, projeto pausado), a reserva era salva só
+    // no aparelho e o app dizia "Reserva Confirmada" sem o anfitrião saber de nada.
+    if (!isStaticUser && !canBookOnline) {
+      Alert.alert(
+        'Não foi possível reservar',
+        'Não conseguimos carregar os dados desta cabana no servidor. Verifique sua conexão e tente novamente.'
+      );
+      return;
+    }
+
     if (!canBookOnline || !checkInDate || !checkOutDate) {
       // usuário estático, ou propriedade não veio do banco (id local tipo
       // "p1") - mesmo comportamento de sempre, via BookingContext/AsyncStorage.
@@ -418,34 +432,42 @@ export default function DetailsScreen() {
     Alert.alert('Denúncia enviada', 'Obrigado por avisar - nossa equipe vai analisar.');
   };
 
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const canGoPrevMonth =
+    calendarMonth.getFullYear() > today.getFullYear() ||
+    (calendarMonth.getFullYear() === today.getFullYear() && calendarMonth.getMonth() > today.getMonth());
+
+  const shiftCalendarMonth = (delta: number) => {
+    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+  };
+
   const renderCalendarDays = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const days = [];
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const firstWeekDay = new Date(currentYear, currentMonth, 1).getDay();
+    const month = calendarMonth.getMonth();
+    const year = calendarMonth.getFullYear();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstWeekDay = new Date(year, month, 1).getDay();
 
     for (let i = 0; i < firstWeekDay; i++) {
       days.push(<View key={`empty-${i}`} style={{ width: 35, height: 35 }} />);
     }
 
     for (let i = 1; i <= daysInMonth; i++) {
-      const dateObj = new Date(currentYear, currentMonth, i);
+      const dateObj = new Date(year, month, i);
       const isPast = dateObj < today;
-      const isCheckIn = checkInDate?.getDate() === i && checkInDate?.getMonth() === currentMonth;
-      const isCheckOut = checkOutDate?.getDate() === i && checkOutDate?.getMonth() === currentMonth;
-      const isSelected = isCheckIn || isCheckOut;
+      const isSelected = isSameDay(checkInDate, dateObj) || isSameDay(checkOutDate, dateObj);
       const isInRange =
-        checkInDate && checkOutDate &&
-        dateObj > checkInDate && dateObj < checkOutDate &&
-        dateObj.getMonth() === currentMonth;
+        !!checkInDate && !!checkOutDate && dateObj > checkInDate && dateObj < checkOutDate;
 
       days.push(
         <TouchableOpacity
           key={i}
           disabled={isPast}
+          testID={`calendar-day-${i}`}
           style={[
             styles.calDay,
             isSelected && styles.calDaySelected,
@@ -482,21 +504,17 @@ export default function DetailsScreen() {
 
   const isolationInfo = ISOLATION_MAP[String(displayIsolationLevel).toLowerCase()] ?? DEFAULT_ISOLATION;
   const amenitiesFromDb = property?.amenities ?? [];
-  const reviewsCountLabel = loadingReviews
-    ? '···'
-    : reviewsFailed
-      ? FALLBACK_REVIEWS.length
-      : reviews.length;
+  const reviewsCountLabel = loadingReviews ? '···' : reviewsFailed ? '—' : reviews.length;
 
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={styles.imageHeader}>
-          <Image source={{ uri: displayImage }} style={styles.mainImage} />
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <PropertyImage uri={displayImage || null} style={styles.mainImage} iconSize={64} />
+          <TouchableOpacity style={[styles.backButton, { top: insets.top + 10 }]} onPress={() => router.back()}>
             <ChevronLeft color="#000" size={24} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.heartButton} onPress={() => toggleFavorite(id as string)}>
+          <TouchableOpacity style={[styles.heartButton, { top: insets.top + 10 }]} onPress={() => toggleFavorite(id as string)}>
             <Heart size={24} color={isFav ? '#FF385C' : '#fff'} fill={isFav ? '#FF385C' : 'rgba(0,0,0,0.3)'} />
           </TouchableOpacity>
         </View>
@@ -508,12 +526,12 @@ export default function DetailsScreen() {
             <MapPin size={14} color="#6B7280" />
             <Text style={styles.locationText}> {displayLocation}</Text>
           </View>
-          <TouchableOpacity style={styles.ratingRow}>
+          <View style={styles.ratingRow}>
             <Star size={16} color="#F59E0B" fill="#F59E0B" />
             <Text style={styles.ratingValue}> {(property?.rating ?? 0).toFixed(2).replace('.', ',')}</Text>
             <Text style={styles.ratingCount}> · {reviewsCountLabel} avaliações</Text>
             <ChevronRight size={14} color="#9CA3AF" style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
+          </View>
 
           <View style={styles.divider} />
           <Text style={styles.sectionTitle}>Sobre o lugar</Text>
@@ -532,19 +550,16 @@ export default function DetailsScreen() {
           <View style={styles.divider} />
           <Text style={styles.sectionTitle}>Comodidades</Text>
           <View style={styles.amenitiesGrid}>
-            {amenitiesFromDb.length > 0
-              ? amenitiesFromDb.map((label, i) => (
-                  <View key={i} style={styles.amenityItem}>
-                    <Check size={22} color="#2D5A27" />
-                    <Text style={styles.amenityLabel}>{label}</Text>
-                  </View>
-                ))
-              : AMENITIES.map((a, i) => (
-                  <View key={i} style={styles.amenityItem}>
-                    <a.icon size={22} color="#2D5A27" />
-                    <Text style={styles.amenityLabel}>{a.label}</Text>
-                  </View>
-                ))}
+            {amenitiesFromDb.length > 0 ? (
+              amenitiesFromDb.map((label, i) => (
+                <View key={i} style={styles.amenityItem}>
+                  <Check size={22} color="#2D5A27" />
+                  <Text style={styles.amenityLabel}>{label}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.bodyText}>O anfitrião ainda não informou as comodidades.</Text>
+            )}
           </View>
 
           <View style={styles.divider} />
@@ -563,23 +578,7 @@ export default function DetailsScreen() {
           ) : !reviewsFailed && reviews.length === 0 ? (
             <Text style={styles.bodyText}>Ainda não há avaliações para esta cabana.</Text>
           ) : reviewsFailed ? (
-            FALLBACK_REVIEWS.map((r) => (
-              <View key={r.id} style={styles.reviewCard}>
-                <Image source={{ uri: r.avatar }} style={styles.reviewAvatar} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={styles.reviewAuthor}>{r.author}</Text>
-                    <Text style={styles.reviewDate}>{r.date}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', marginVertical: 4 }}>
-                    {[...Array(r.rating)].map((_, i) => (
-                      <Star key={i} size={12} color="#F59E0B" fill="#F59E0B" />
-                    ))}
-                  </View>
-                  <Text style={styles.reviewComment}>{r.comment}</Text>
-                </View>
-              </View>
-            ))
+            <Text style={styles.bodyText}>Não foi possível carregar as avaliações agora. Tente novamente mais tarde.</Text>
           ) : (
             reviews.map((r) => (
               <View key={r.id} style={styles.reviewCard}>
@@ -629,25 +628,13 @@ export default function DetailsScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>Diretrizes da Hospedagem</Text>
-          {[
-            '👥 Máximo de 4 hóspedes',
-            '🕑 Check-in: 14h · Check-out: 11h',
-            '🚭 Não é permitido fumar dentro',
-            '🧯 Extintor e kit de primeiros socorros',
-            '✅ Cancelamento gratuito até 7 dias',
-          ].map((rule, i) => (
-            <Text key={i} style={styles.ruleText}>{rule}</Text>
-          ))}
-
           <TouchableOpacity style={styles.reportBtn} onPress={openReportModal}>
             <Text style={styles.reportText}>🚩 Denunciar este anúncio</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 20 + insets.bottom }]}>
         <View>
           <Text style={styles.footerPrice}>{formatCurrency(priceNum)}</Text>
           <Text style={styles.footerNight}>por noite</Text>
@@ -657,7 +644,7 @@ export default function DetailsScreen() {
         </TouchableOpacity>
       </View>
 
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
@@ -683,6 +670,22 @@ export default function DetailsScreen() {
 
                 {calendarVisible && (
                   <View style={styles.calendarContainer}>
+                    <View style={styles.calHeader}>
+                      <TouchableOpacity
+                        onPress={() => shiftCalendarMonth(-1)}
+                        disabled={!canGoPrevMonth}
+                        style={[styles.calNavBtn, !canGoPrevMonth && { opacity: 0.25 }]}
+                        testID="calendar-prev"
+                      >
+                        <ChevronLeft size={20} color="#1F2937" />
+                      </TouchableOpacity>
+                      <Text style={styles.calMonthLabel}>
+                        {MONTH_NAMES[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}
+                      </Text>
+                      <TouchableOpacity onPress={() => shiftCalendarMonth(1)} style={styles.calNavBtn} testID="calendar-next">
+                        <ChevronRight size={20} color="#1F2937" />
+                      </TouchableOpacity>
+                    </View>
                     <View style={styles.calWeekRow}>
                       {['D','S','T','Q','Q','S','S'].map((d, idx) => (
                         <Text key={idx} style={styles.calWeekLabel}>{d}</Text>
@@ -761,7 +764,7 @@ export default function DetailsScreen() {
         </View>
       </Modal>
 
-      <Modal visible={reportModalVisible} animationType="slide" transparent>
+      <Modal visible={reportModalVisible} animationType="slide" transparent onRequestClose={() => setReportModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
@@ -881,6 +884,9 @@ const styles = StyleSheet.create({
   calDaySelected: { backgroundColor: '#2D5A27', borderColor: '#2D5A27' },
   calDayTextSelected: { color: '#fff', fontWeight: 'bold' },
   calDayTextInRange: { color: '#2D5A27', fontWeight: '600' },
+  calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calNavBtn: { padding: 6 },
+  calMonthLabel: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
   calWeekRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 6, gap: 5 },
   calWeekLabel: { width: 35, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#9CA3AF' },
   calDayText: { fontSize: 12 },
