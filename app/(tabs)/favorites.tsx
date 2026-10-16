@@ -104,6 +104,9 @@ export default function FavoritesScreen() {
           <Text style={styles.emptySub}>
             Clique no coração nas cabanas para salvá-las aqui e planejar sua próxima viagem.
           </Text>
+          <TouchableOpacity style={styles.exploreButton} onPress={() => router.replace('/(tabs)')}>
+            <Text style={styles.exploreButtonText}>Explorar cabanas</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -120,4 +123,6 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 50, marginBottom: 20, opacity: 0.2 },
   emptyText: { fontSize: 20, fontWeight: 'bold', color: '#374151', textAlign: 'center' },
   emptySub: { fontSize: 15, color: '#6B7280', textAlign: 'center', marginTop: 10, lineHeight: 22 },
+  exploreButton: { marginTop: 20, backgroundColor: '#2D5A27', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12 },
+  exploreButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
