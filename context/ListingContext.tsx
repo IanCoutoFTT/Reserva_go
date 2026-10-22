@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { useAuth } from './AuthContext';
 
 export interface Listing {
   id: string;
@@ -163,7 +164,16 @@ const INITIAL_PROPERTIES: Listing[] = [
 ];
 
 export function ListingProvider({ children }: { children: React.ReactNode }) {
-  const [listings, setListings] = useState<Listing[]>(INITIAL_PROPERTIES);
+  const { user } = useAuth();
+  // As 8 cabanas de exemplo são só do login estático de teste visual. Antes,
+  // qualquer usuário (inclusive visitante) caía nelas quando a busca no
+  // Supabase falhava e via cabanas que não existem no banco.
+  const isStaticUser = !!user?.id && user.id.startsWith('static-');
+  const [listings, setListings] = useState<Listing[]>(isStaticUser ? INITIAL_PROPERTIES : []);
+
+  useEffect(() => {
+    setListings(isStaticUser ? INITIAL_PROPERTIES : []);
+  }, [user?.id, isStaticUser]);
 
   const addListing = useCallback((l: Omit<Listing, 'id' | 'createdAt' | 'bookingsCount' | 'rating'>) => {
     const newListing: Listing = {

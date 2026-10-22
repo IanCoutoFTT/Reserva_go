@@ -40,6 +40,8 @@ export default function HomeScreen() {
   // só é recriado quando isStaticUser muda; um state aqui ficaria "stale"
   // (sempre o valor de quando a função foi criada) nos refocos seguintes.
   const hasLoadedOnceRef = useRef(false);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // useFocusEffect (não useEffect simples) - a aba Explorar fica montada o
   // tempo todo (React Navigation não desmonta abas ao trocar), então um
@@ -65,9 +67,11 @@ export default function HomeScreen() {
         .then(({ data, error }) => {
           if (cancelled) return;
           if (error || !data) {
-            console.log('[index] getProperties falhou, usando fallback local ->', error);
+            console.log('[index] getProperties falhou ->', error);
             if (!hasLoadedOnceRef.current) setRemoteProperties(null);
+            setLoadError(true);
           } else {
+            setLoadError(false);
             setRemoteProperties(data.map(mapPropertyToListing));
           }
         })
@@ -80,7 +84,7 @@ export default function HomeScreen() {
       return () => {
         cancelled = true;
       };
-    }, [isStaticUser])
+    }, [isStaticUser, reloadKey])
   );
 
   const allProperties = useMemo(
@@ -311,7 +315,16 @@ export default function HomeScreen() {
         </View>
       ) : allProperties.length === 0 ? (
         <View style={styles.searchHint}>
-          <Text style={styles.searchHintText}>Nenhuma cabana disponível no momento.</Text>
+          <Text style={styles.searchHintText}>
+            {loadError
+              ? 'Não foi possível carregar as cabanas. Verifique sua conexão e tente novamente.'
+              : 'Nenhuma cabana disponível no momento.'}
+          </Text>
+          {loadError && (
+            <TouchableOpacity style={styles.retryBtn} onPress={() => setReloadKey((k) => k + 1)}>
+              <Text style={styles.retryBtnText}>Tentar de novo</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -342,6 +355,8 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  retryBtn: { marginTop: 20, backgroundColor: '#2D5A27', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  retryBtnText: { color: '#fff', fontWeight: 'bold' },
   container: { flex: 1, backgroundColor: '#fff' },
   scrollContent: { paddingBottom: 30 },
   sectionContainer: { marginTop: 25 },

@@ -38,7 +38,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, loadError } = useNotifications();
   const [activeFilter, setActiveFilter] = useState<FilterType>('todas');
 
   const filtered = useMemo(() => {
@@ -130,8 +130,12 @@ export default function NotificationsScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Bell size={40} color="#D1D5DB" />
-            <Text style={styles.emptyTitle}>Nenhuma notificação</Text>
-            <Text style={styles.emptySubtitle}>Você está em dia por aqui!</Text>
+            <Text style={styles.emptyTitle}>
+              {loadError ? 'Não foi possível carregar' : 'Nenhuma notificação'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {loadError ? 'Verifique sua conexão e tente novamente mais tarde.' : 'Você está em dia por aqui!'}
+            </Text>
           </View>
         }
       />

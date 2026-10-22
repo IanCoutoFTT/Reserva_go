@@ -49,6 +49,7 @@ export default function MyCabinsScreen() {
   const isStaticUser = !!user?.id && user.id.startsWith('static-');
   const [remoteCabins, setRemoteCabins] = useState<CabinRow[] | null>(null);
   const [loading, setLoading] = useState(!isStaticUser);
+  const [loadError, setLoadError] = useState(false);
 
   const loadCabins = () => {
     if (isStaticUser || !user?.id) {
@@ -60,9 +61,11 @@ export default function MyCabinsScreen() {
     setLoading(true);
     getPropertiesByHost(user.id).then(({ data, error }) => {
       if (error || !data) {
-        console.log('[my-cabins] getPropertiesByHost falhou, usando fallback local ->', error);
+        console.log('[my-cabins] getPropertiesByHost falhou ->', error);
         setRemoteCabins(null);
+        setLoadError(true);
       } else {
+        setLoadError(false);
         // Cabanas que o próprio anfitrião excluiu (status 'removido') não voltam pra lista.
         setRemoteCabins(data.filter((p) => p.status !== 'removido').map(mapPropertyToCabinRow));
       }
@@ -159,7 +162,14 @@ export default function MyCabinsScreen() {
           </View>
         )}
 
-        {!loading && listings.length === 0 && (
+        {!loading && listings.length === 0 && loadError && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>Não foi possível carregar suas cabanas.</Text>
+            <Text style={styles.emptyStateText}>Verifique sua conexão e tente novamente.</Text>
+          </View>
+        )}
+
+        {!loading && listings.length === 0 && !loadError && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>Você ainda não tem cabanas anunciadas.</Text>
             <Text style={styles.emptyStateText}>Clique em "Novo Anúncio" para começar!</Text>
