@@ -15,6 +15,7 @@ export interface Listing {
   category?: string;
   subCategory?: string;
   hostId?: string;
+  amenities?: string[];
 }
 
 interface ListingContextData {

@@ -19,7 +19,7 @@ jest.mock('expo-file-system', () => ({
 }));
 
 import { supabase } from '../../lib/supabase';
-import { approveProperty, getPropertiesByHost, getPropertyById, getProperties, setFeatured, uploadPropertyImage } from '../propertyService';
+import { approveProperty, deleteProperty, getPropertiesByHost, getPropertiesByIds, getPropertyById, getProperties, setFeatured, uploadPropertyImage } from '../propertyService';
 
 /** Builder encadeável e "thenable" - cobre tanto `await query.eq(...)` quanto `await query.select().single()`. */
 function makeBuilder(result: { data: any; error: any }): any {
@@ -167,5 +167,49 @@ describe('propertyService.uploadPropertyImage', () => {
     const result = await uploadPropertyImage('file:///foto.jpg', 'user-1');
 
     expect(result).toEqual({ data: null, error: 'bucket cheio' });
+  });
+});
+
+describe('propertyService.getPropertiesByIds', () => {
+  it('lista vazia não consulta o banco', async () => {
+    const result = await getPropertiesByIds([]);
+
+    expect(result).toEqual({ data: [], error: null });
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('busca as cabanas pelos ids informados', async () => {
+    const builder = makeBuilder({ data: [{ id: 'a' }], error: null });
+    builder.in = jest.fn(() => builder);
+    mockFrom.mockReturnValue(builder);
+
+    const result = await getPropertiesByIds(['a', 'b']);
+
+    expect(mockFrom).toHaveBeenCalledWith('properties');
+    expect(builder.in).toHaveBeenCalledWith('id', ['a', 'b']);
+    expect(result).toEqual({ data: [{ id: 'a' }], error: null });
+  });
+});
+
+describe('propertyService.deleteProperty', () => {
+  it('marca a cabana como "removido" (distinto de "inativo" = reprovada pelo admin)', async () => {
+    const builder = makeBuilder({ data: { id: 'p1', status: 'removido' }, error: null });
+    mockFrom.mockReturnValue(builder);
+
+    const result = await deleteProperty('p1');
+
+    expect(builder.update).toHaveBeenCalledWith({ status: 'removido' });
+    expect(result.error).toBeNull();
+  });
+
+  it('banco sem a migration 006 (enum sem "removido"): cai pra "inativo" em vez de falhar', async () => {
+    const failing = makeBuilder({ data: null, error: { message: 'invalid input value for enum cabin_status: "removido"' } });
+    const working = makeBuilder({ data: { id: 'p1', status: 'inativo' }, error: null });
+    mockFrom.mockReturnValueOnce(failing).mockReturnValueOnce(working);
+
+    const result = await deleteProperty('p1');
+
+    expect(working.update).toHaveBeenCalledWith({ status: 'inativo' });
+    expect(result.error).toBeNull();
   });
 });

@@ -108,6 +108,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq('id', activeSession.user.id)
       .single();
 
+    // PGRST116 = nenhuma linha visível: a conta foi excluída (profiles.deleted_at
+    // esconde a linha via RLS) ou nunca teve perfil. Não dá pra deixar entrar
+    // como "hóspede" - antes uma conta excluída voltava a funcionar no login.
+    if (error?.code === 'PGRST116') {
+      console.log('[auth] perfil indisponível (conta excluída?) - encerrando sessão');
+      await supabase.auth.signOut().catch(() => {});
+      setSession(null);
+      setUser(null);
+      Alert.alert('Conta indisponível', 'Esta conta foi excluída ou não está mais ativa.');
+      return;
+    }
+
     if (error || !profile) {
       console.log('[auth] falha ao ler profile, usando fallback ->', error?.message);
       // Não deveria acontecer (a trigger roda antes disso), mas evita deixar

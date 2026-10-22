@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useListings } from '../context/ListingContext';
+import { parsePriceBR } from '../lib/format';
 import { createProperty, updateProperty, uploadPropertyImage, UpdatableProperty } from '../services/propertyService';
 import type { IsolationLevel } from '../services/types';
 
@@ -42,6 +43,19 @@ const SUB_CATEGORIES: Record<string, { id: string; label: string }[]> = {
     { id: 'Sudeste',      label: '💦 Sudeste'      },
   ],
 };
+
+const AMENITY_OPTIONS = [
+  'Wi-Fi',
+  'Piscina',
+  'Churrasqueira',
+  'Lareira',
+  'Ar-condicionado',
+  'Cozinha completa',
+  'Estacionamento',
+  'Vista panorâmica',
+  'Trilha privativa',
+  'Aceita pets',
+];
 
 const ISOLATION_LEVELS = [
   { id: 'urbano',  emoji: '🏘️', label: 'Vizinhos próximos',  description: 'Área residencial ou vila, vizinhos a menos de 500m.' },
@@ -76,9 +90,19 @@ export default function CreateListingScreen() {
     isEditMode ? (String(params.subCategory ?? '') || null) : null
   );
 
+  const [amenities, setAmenities] = useState<string[]>(
+    isEditMode && typeof params.amenities === 'string' && params.amenities
+      ? params.amenities.split('|')
+      : []
+  );
+
+  const toggleAmenity = (label: string) => {
+    setAmenities((prev) => (prev.includes(label) ? prev.filter((a) => a !== label) : [...prev, label]));
+  };
+
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [16, 9],
       quality: 0.8,
@@ -88,11 +112,11 @@ export default function CreateListingScreen() {
 
   // Usuário estático (__DEV__) não existe em profiles/auth - continua salvando
   // só localmente (ListingContext), como sempre funcionou.
-  const saveLocally = () => {
+  const saveLocally = (priceValue: number) => {
     const dados = {
       title: title.trim(),
       location: location.trim(),
-      price: parseFloat(price) || 0,
+      price: priceValue,
       description: description.trim(),
       imageUri,
       isolationLevel,
@@ -114,6 +138,17 @@ export default function CreateListingScreen() {
       Alert.alert('Campo obrigatório', 'Informe o título do anúncio.');
       return;
     }
+    if (!location.trim()) {
+      Alert.alert('Campo obrigatório', 'Informe a localização (cidade e estado).');
+      return;
+    }
+    // "1.200", "450,50" e "R$ 1.200,50" são lidos do jeito brasileiro (parseFloat
+    // lia "1.200" como 1,2 e "450,50" como 450 - e valor vazio virava R$ 0).
+    const priceValue = parsePriceBR(price);
+    if (priceValue === null || priceValue <= 0) {
+      Alert.alert('Valor inválido', 'Informe o valor por noite, por exemplo 450 ou 450,50.');
+      return;
+    }
     if (!category) {
       Alert.alert('Campo obrigatório', 'Selecione uma categoria.');
       return;
@@ -123,7 +158,7 @@ export default function CreateListingScreen() {
 
     // Edição de cabana local (não veio do banco) - mesmo fluxo local de sempre.
     if (isEditMode && !editIsRemote) {
-      saveLocally();
+      saveLocally(priceValue);
       Alert.alert('Anúncio atualizado! 🌿', 'As alterações já estão visíveis.', [
         { text: 'Ver minhas cabanas', onPress: () => router.replace('/my-cabins') },
       ]);
@@ -131,7 +166,7 @@ export default function CreateListingScreen() {
     }
 
     if (!user || isStaticUser) {
-      saveLocally();
+      saveLocally(priceValue);
       Alert.alert(
         isEditMode ? 'Anúncio atualizado! 🌿' : 'Anúncio publicado! 🌿',
         isEditMode ? 'As alterações já estão visíveis.' : 'Sua cabana já está visível no explorar.',
@@ -153,7 +188,22 @@ export default function CreateListingScreen() {
       const { data: uploadedUrl, error: uploadError } = await uploadPropertyImage(imageUri!, user.id);
       if (uploadError) {
         console.log('[create-listing] upload de imagem falhou ->', uploadError);
-        // segue sem trocar a imagem em vez de travar o anúncio inteiro por causa da foto
+        // Antes isso era engolido e o anúncio saía sem foto, sem nenhum aviso.
+        const publishWithoutPhoto = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            'Não foi possível enviar a foto',
+            'Quer tentar de novo ou ' + (isEditMode ? 'salvar mantendo a foto atual?' : 'publicar sem foto?'),
+            [
+              { text: 'Tentar de novo', style: 'cancel', onPress: () => resolve(false) },
+              { text: isEditMode ? 'Manter foto atual' : 'Publicar sem foto', onPress: () => resolve(true) },
+            ],
+            { cancelable: false }
+          );
+        });
+        if (!publishWithoutPhoto) {
+          setSaving(false);
+          return;
+        }
       } else {
         imageUrl = uploadedUrl;
       }
@@ -164,10 +214,11 @@ export default function CreateListingScreen() {
         title: title.trim(),
         description: description.trim(),
         location: location.trim(),
-        price: parseFloat(price) || 0,
+        price: priceValue,
         isolation_level: (isolationLevel as IsolationLevel | null) ?? null,
         category,
         sub_category: subCategory || 'Populares',
+        amenities,
       };
       if (pickedNewImage && imageUrl) dados.images = [imageUrl];
 
@@ -190,12 +241,12 @@ export default function CreateListingScreen() {
       title: title.trim(),
       description: description.trim(),
       location: location.trim(),
-      price: parseFloat(price) || 0,
+      price: priceValue,
       isolation_level: (isolationLevel as IsolationLevel | null) ?? null,
       category,
       sub_category: subCategory || 'Populares',
       images: imageUrl ? [imageUrl] : [],
-      amenities: [],
+      amenities,
       // status omitido de propósito - o banco usa o default 'pendente'
       // (properties.status NOT NULL DEFAULT 'pendente', schema.sql).
     });
@@ -204,10 +255,10 @@ export default function CreateListingScreen() {
 
     if (error || !property) {
       console.log('[create-listing] createProperty falhou, salvando local ->', error);
-      saveLocally();
+      saveLocally(priceValue);
       Alert.alert(
         'Salvo só neste aparelho',
-        'Não foi possível publicar no servidor agora, mas o anúncio já aparece no seu painel.',
+        'Não foi possível publicar no servidor agora. O anúncio aparece no seu painel só até você fechar o app - tente publicar de novo com conexão.',
         [{ text: 'Ver minhas cabanas', onPress: () => router.replace('/my-cabins') }]
       );
       return;
@@ -270,7 +321,7 @@ export default function CreateListingScreen() {
           <Text style={styles.label}>Valor por Noite (R$)</Text>
           <View style={styles.inputWrapper}>
             <DollarSign size={20} color="#9CA3AF" style={styles.inputIcon} />
-            <TextInput style={styles.input} placeholder="0,00" keyboardType="numeric" value={price} onChangeText={setPrice} />
+            <TextInput style={styles.input} placeholder="0,00" keyboardType="decimal-pad" value={price} onChangeText={setPrice} />
           </View>
         </View>
 
@@ -332,6 +383,26 @@ export default function CreateListingScreen() {
             </View>
           </View>
         )}
+
+        {/* Comodidades */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Comodidades</Text>
+          <Text style={styles.labelSub}>Marque só o que a cabana realmente oferece.</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {AMENITY_OPTIONS.map((label) => {
+              const isSelected = amenities.includes(label);
+              return (
+                <TouchableOpacity
+                  key={label}
+                  style={[styles.chip, isSelected && styles.chipActive]}
+                  onPress={() => toggleAmenity(label)}
+                >
+                  <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
         {/* Isolamento */}
         <View style={styles.inputGroup}>

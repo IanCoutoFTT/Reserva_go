@@ -1,7 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native'; 
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Star, MapPin, Heart } from 'lucide-react-native'; 
 import { useRouter } from 'expo-router';
 import { useFavorites } from '../context/FavoritesContext';
+import { formatCurrency } from '../lib/format';
+import { PropertyImage } from './PropertyImage';
 
 interface PropertyProps {
   id: string;
@@ -12,9 +14,11 @@ interface PropertyProps {
   description: string;
   image?: string | null;
   category?: string;
+  isolationLevel?: string | null;
+  hostId?: string;
 }
 
-export function PropertyCard({ id, title, location, price, rating, description, image, category }: PropertyProps) {
+export function PropertyCard({ id, title, location, price, rating, description, image, category, isolationLevel, hostId }: PropertyProps) {
   const router = useRouter();
   const { favorites, toggleFavorite } = useFavorites();
   
@@ -27,14 +31,11 @@ export function PropertyCard({ id, title, location, price, rating, description, 
       activeOpacity={0.9}
       onPress={() => router.push({ 
         pathname: "/details", 
-        params: { id, title, price, location, description, image } 
+        params: { id, title, price, location, description, image, isolationLevel, hostId } 
       })}
     >
       <View>
-        <Image
-          source={{ uri: image ?? undefined }}
-          style={styles.cardImage}
-        />
+        <PropertyImage uri={image} style={styles.cardImage} iconSize={40} />
         
         {/* BOTÃO DE CORAÇÃO SOBRE A IMAGEM */}
         <TouchableOpacity
@@ -62,7 +63,7 @@ export function PropertyCard({ id, title, location, price, rating, description, 
           <MapPin size={12} color="#6B7280" /> {location}
         </Text>
         <Text style={styles.cardPrice}>
-          R$ {price} <Text style={styles.perNight}>/ noite</Text>
+          {formatCurrency(Number(price))} <Text style={styles.perNight}>/ noite</Text>
         </Text>
       </View>
     </TouchableOpacity>
