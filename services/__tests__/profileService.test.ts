@@ -26,7 +26,7 @@ jest.mock('expo-file-system', () => ({
 }));
 
 import { supabase } from '../../lib/supabase';
-import { getProfilesByIds, updateRole, uploadAvatar } from '../profileService';
+import { getMyProfile, getProfile, getProfilesByIds, updateProfile, updateRole, uploadAvatar } from '../profileService';
 
 const mockRpc = supabase.rpc as jest.Mock;
 const mockFrom = supabase.from as jest.Mock;
@@ -120,7 +120,9 @@ describe('profileService.getProfilesByIds', () => {
     const result = await getProfilesByIds(['host-1']);
 
     expect(mockFrom).toHaveBeenCalledWith('profiles');
-    expect(builder.select).toHaveBeenCalledWith('*');
+    expect(builder.select).toHaveBeenCalledWith(
+      'id, name, avatar_url, role, bio, interests, created_at, updated_at, deleted_at'
+    );
     expect(mockIn).toHaveBeenCalledWith('id', ['host-1']);
     expect(result).toEqual({ data: [{ id: 'host-1', name: 'Carlos' }], error: null });
   });
@@ -130,5 +132,84 @@ describe('profileService.getProfilesByIds', () => {
 
     expect(mockFrom).not.toHaveBeenCalled();
     expect(result).toEqual({ data: [], error: null });
+  });
+});
+
+// Migração 007: email/phone saíram do SELECT público. Estes testes travam o
+// contrato novo no código (nenhum select('*'), perfil próprio via RPC).
+const PUBLIC_COLUMNS = 'id, name, avatar_url, role, bio, interests, created_at, updated_at, deleted_at';
+
+describe('profileService.getMyProfile', () => {
+  it('lê o perfil completo do próprio usuário pela função get_my_profile', async () => {
+    const mockSingle = jest.fn().mockResolvedValue({
+      data: { id: 'u1', email: 'a@b.com', phone: '62999990000' },
+      error: null,
+    });
+    mockRpc.mockReturnValueOnce({ single: mockSingle });
+
+    const result = await getMyProfile();
+
+    expect(mockRpc).toHaveBeenCalledWith('get_my_profile');
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(result).toEqual({ data: { id: 'u1', email: 'a@b.com', phone: '62999990000' }, error: null });
+  });
+
+  it('devolve o erro quando a conta não tem perfil visível (PGRST116 / conta excluída)', async () => {
+    mockRpc.mockReturnValueOnce({
+      single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116', message: 'no rows' } }),
+    });
+
+    const result = await getMyProfile();
+
+    expect(result).toEqual({ data: null, error: 'no rows' });
+  });
+});
+
+describe('profileService.getProfile', () => {
+  it('lê só as colunas públicas (nunca select("*"))', async () => {
+    const builder = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { id: 'host-1', name: 'Carlos' }, error: null }),
+    };
+    mockFrom.mockReturnValueOnce(builder);
+
+    const result = await getProfile('host-1');
+
+    expect(builder.select).toHaveBeenCalledWith(PUBLIC_COLUMNS);
+    expect(builder.eq).toHaveBeenCalledWith('id', 'host-1');
+    expect(result.data).toEqual({ id: 'host-1', name: 'Carlos' });
+  });
+});
+
+describe('profileService.updateProfile', () => {
+  it('grava e confirma só o id (UPDATE ... RETURNING * não pode mais ler email/phone)', async () => {
+    const builder = {
+      update: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { id: 'u1' }, error: null }),
+    };
+    mockFrom.mockReturnValueOnce(builder);
+
+    const result = await updateProfile('u1', { phone: '62988887777' });
+
+    expect(builder.update).toHaveBeenCalledWith({ phone: '62988887777' });
+    expect(builder.select).toHaveBeenCalledWith('id');
+    expect(result).toEqual({ data: { id: 'u1' }, error: null });
+  });
+
+  it('se o UPDATE falhar, devolve o erro', async () => {
+    const builder = {
+      update: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: null, error: { message: 'sem permissão' } }),
+    };
+    mockFrom.mockReturnValueOnce(builder);
+
+    const result = await updateProfile('u1', { bio: 'x' });
+
+    expect(result).toEqual({ data: null, error: 'sem permissão' });
   });
 });

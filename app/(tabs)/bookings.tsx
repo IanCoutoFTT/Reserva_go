@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../services/bookingService';
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
+import { stayEnded } from '../../lib/booking';
 import { PropertyImage } from '../../components/PropertyImage';
 
 // Linha unificada de exibição - pode vir de uma reserva real (Supabase,
@@ -24,7 +25,7 @@ type BookingRow = {
   status: string;
   checkInLabel: string;
   checkOutLabel: string;
-  checkOutDate?: Date;
+  checkOutIso?: string;
   nights?: number;
   total?: number;
   payMethod?: string;
@@ -86,7 +87,7 @@ export default function BookingsScreen() {
       status: b.status,
       checkInLabel: isoToBR(b.check_in),
       checkOutLabel: isoToBR(b.check_out),
-      checkOutDate: new Date(b.check_out),
+      checkOutIso: b.check_out,
       nights: b.nights,
       total: b.total,
       payMethod: b.pay_method,
@@ -148,11 +149,10 @@ export default function BookingsScreen() {
 
   const renderBookingItem = ({ item }: { item: BookingRow }) => {
     // Estadia que já terminou: nada grava 'realizada' no banco, então tratamos
-    // pela data - sem botão Cancelar e com o rótulo "Realizada".
-    const stayEnded = !!item.checkOutDate && item.checkOutDate < new Date();
-    const isActive = item.status === 'reservada' && !stayEnded;
-    const canReview =
-      item.isReal && item.status !== 'cancelada' && !!item.checkOutDate && item.checkOutDate < new Date();
+    // pela data (lib/booking.ts) - sem botão Cancelar e com o rótulo "Realizada".
+    const ended = !!item.checkOutIso && stayEnded(item.checkOutIso);
+    const isActive = item.status === 'reservada' && !ended;
+    const canReview = item.isReal && item.status !== 'cancelada' && ended;
 
     return (
       <TouchableOpacity

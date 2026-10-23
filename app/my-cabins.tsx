@@ -5,9 +5,11 @@ import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, Touchabl
 import { useAuth } from '../context/AuthContext';
 import { Listing, useListings } from '../context/ListingContext';
 import { PropertyImage } from '../components/PropertyImage';
+import { effectiveStatus } from '../lib/booking';
 import { formatCurrency } from '../lib/format';
+import { getBookingsByHost } from '../services/bookingService';
 import { deleteProperty, getPropertiesByHost } from '../services/propertyService';
-import type { CabinStatus, Property as DbProperty } from '../services/types';
+import type { BookingForHost, CabinStatus, Property as DbProperty } from '../services/types';
 
 type CabinRow = Listing & { status?: CabinStatus };
 
@@ -38,6 +40,17 @@ const STATUS_LABELS: Record<CabinStatus, { label: string; color: string; bg: str
   inativo: { label: 'Reprovado', color: '#374151', bg: '#F3F4F6' },
   removido: { label: 'Removido', color: '#374151', bg: '#F3F4F6' },
 };
+
+function isoToBR(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+const BOOKING_STATUS_LABELS = {
+  reservada: { label: 'Confirmada', color: '#166534', bg: '#DCFCE7' },
+  realizada: { label: 'Realizada', color: '#374151', bg: '#F3F4F6' },
+  cancelada: { label: 'Cancelada', color: '#991B1B', bg: '#FEE2E2' },
+} as const;
 
 export default function MyCabinsScreen() {
   const router = useRouter();
@@ -81,8 +94,43 @@ export default function MyCabinsScreen() {
   const usingRemote = remoteCabins !== null;
   const listings: CabinRow[] = usingRemote ? remoteCabins! : localListings;
 
-  const totalEarnings = listings.reduce((acc, c) => acc + (Number(c.price) * (c.bookingsCount || 0)), 0);
-  const totalBookings = listings.reduce((acc, c) => acc + (c.bookingsCount || 0), 0);
+  // Reservas recebidas nas cabanas do anfitrião (RLS bookings_host_read). Só
+  // para usuário real - o estático não existe no banco e segue com o cálculo local.
+  const [hostBookings, setHostBookings] = useState<BookingForHost[] | null>(null);
+  const [bookingsError, setBookingsError] = useState(false);
+
+  useEffect(() => {
+    if (isStaticUser || !user?.id) {
+      setHostBookings(null);
+      return;
+    }
+    let cancelled = false;
+    getBookingsByHost(user.id).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data) {
+        console.log('[my-cabins] getBookingsByHost falhou ->', error);
+        setHostBookings(null);
+        setBookingsError(true);
+      } else {
+        setBookingsError(false);
+        setHostBookings(data);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isStaticUser, user?.id]);
+
+  // Com reservas reais, os números vêm delas (valor gravado, sem cancelamentos).
+  // Sem elas (estático / falha), mantém a estimativa antiga preço × reservas.
+  const upcoming = (hostBookings ?? []).filter((b) => effectiveStatus(b) === 'reservada');
+  const received = (hostBookings ?? []).filter((b) => b.status !== 'cancelada');
+  const totalEarnings = hostBookings
+    ? received.reduce((acc, b) => acc + Number(b.total), 0)
+    : listings.reduce((acc, c) => acc + (Number(c.price) * (c.bookingsCount || 0)), 0);
+  const totalBookings = hostBookings
+    ? upcoming.length
+    : listings.reduce((acc, c) => acc + (c.bookingsCount || 0), 0);
 
   const handleDelete = (id: string, title: string) => {
     Alert.alert('Excluir Anúncio', `Tem certeza que deseja remover "${title}"?`, [
@@ -143,12 +191,14 @@ export default function MyCabinsScreen() {
           <View style={styles.statCard}>
             <TrendingUp size={24} color="#2D5A27" />
             <Text style={styles.statValue}>{formatCurrency(totalEarnings)}</Text>
-            <Text style={styles.statLabel}>Ganhos estimados (preço × reservas)</Text>
+            <Text style={styles.statLabel}>
+              {hostBookings ? 'Valor das reservas recebidas' : 'Ganhos estimados (preço × reservas)'}
+            </Text>
           </View>
           <View style={styles.statCard}>
             <CalendarDays size={24} color="#F59E0B" />
             <Text style={styles.statValue}>{totalBookings}</Text>
-            <Text style={styles.statLabel}>Reservas ativas</Text>
+            <Text style={styles.statLabel}>Próximas reservas</Text>
           </View>
         </View>
 
@@ -216,6 +266,43 @@ export default function MyCabinsScreen() {
             </View>
           </View>
         ))}
+
+        {!isStaticUser && (
+          <View style={styles.bookingsSection}>
+            <Text style={styles.sectionTitle}>Reservas recebidas{hostBookings ? ` (${hostBookings.length})` : ''}</Text>
+
+            {bookingsError && (
+              <Text style={[styles.emptyStateText, { marginTop: 12 }]}>Não foi possível carregar as reservas agora.</Text>
+            )}
+
+            {hostBookings && hostBookings.length === 0 && (
+              <Text style={[styles.emptyStateText, { marginTop: 12 }]}>
+                Nenhuma reserva nas suas cabanas ainda. Quando alguém reservar, aparece aqui.
+              </Text>
+            )}
+
+            {(hostBookings ?? []).map((b) => {
+              const status = BOOKING_STATUS_LABELS[effectiveStatus(b)];
+              return (
+                <View key={b.id} style={styles.hostBookingCard}>
+                  <View style={styles.hostBookingTop}>
+                    <Text style={styles.hostBookingGuest} numberOfLines={1}>{b.guest?.name ?? 'Hóspede'}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: status.bg, marginBottom: 0 }]}>
+                      <Text style={[styles.statusBadgeText, { color: status.color }]}>{status.label}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.hostBookingCabin} numberOfLines={1}>{b.properties?.title ?? 'Cabana'}</Text>
+                  <Text style={styles.hostBookingMeta}>
+                    {isoToBR(b.check_in)} → {isoToBR(b.check_out)} · {b.nights} noite{b.nights > 1 ? 's' : ''}
+                  </Text>
+                  <Text style={styles.hostBookingTotal}>
+                    {b.pay_method === 'pix' ? 'PIX' : 'Cartão'} · {formatCurrency(Number(b.total))}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
       <TouchableOpacity 
@@ -242,7 +329,7 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
   cabinCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 16, overflow: 'hidden' },
-  cabinImage: { width: 100, height: '100%', resizeMode: 'cover' },
+  cabinImage: { width: 100, alignSelf: 'stretch', minHeight: 120, resizeMode: 'cover' },
   cabinInfo: { flex: 1, padding: 12 },
   cabinTitle: { fontSize: 16, fontWeight: 'bold', color: '#1F2937', marginBottom: 4 },
   cabinLocationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
@@ -253,6 +340,13 @@ const styles = StyleSheet.create({
   bookingBadgeText: { fontSize: 10, color: '#D97706', fontWeight: 'bold' },
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
   statusBadgeText: { fontSize: 10, fontWeight: 'bold' },
+  bookingsSection: { marginTop: 12, paddingBottom: 110 },
+  hostBookingCard: { backgroundColor: '#F9FAFB', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, marginTop: 12 },
+  hostBookingTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  hostBookingGuest: { flex: 1, fontSize: 15, fontWeight: 'bold', color: '#1F2937' },
+  hostBookingCabin: { fontSize: 13, color: '#4B5563', marginTop: 4 },
+  hostBookingMeta: { fontSize: 12, color: '#6B7280', marginTop: 4 },
+  hostBookingTotal: { fontSize: 13, fontWeight: '600', color: '#2D5A27', marginTop: 4 },
   actionButtons: { justifyContent: 'center', padding: 10, borderLeftWidth: 1, borderLeftColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
   actionBtn: { padding: 10, marginVertical: 4, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB' },
   fab: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#2D5A27', flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 5 },
