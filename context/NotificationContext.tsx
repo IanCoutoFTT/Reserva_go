@@ -28,10 +28,13 @@ interface NotificationContextData {
   addNotification: (n: Omit<AppNotification, 'id' | 'read'>) => void;
   /** Reconsulta a contagem de não lidas no Supabase - usado por outras telas (ex.: messages.tsx) depois de mexer em algo que pode ter mudado o total. No-op pra usuário estático/desconectado. */
   refresh: () => void;
+  /** true quando a busca no Supabase falhou (usuário real) - a tela mostra um aviso em vez de notificações inventadas. */
+  loadError: boolean;
 }
 
-// Usado só como fallback local (usuário estático de dev, ou quando o
-// Supabase falha) - pra tela de notificações nunca ficar em branco.
+// Usado só pelo login estático de teste visual. Usuário real nunca vê isso:
+// antes, enquanto a lista real carregava (ou se a busca falhasse), ele via 8
+// notificações inventadas ("Reserva confirmada", "Carlos Mendes respondeu"...).
 const INITIAL_NOTIFICATIONS: AppNotification[] = [
   {
     id: '1',
@@ -131,17 +134,27 @@ const NotificationContext = createContext<NotificationContextData>({
   markAllAsRead: () => {},
   addNotification: () => {},
   refresh: () => {},
+  loadError: false,
 });
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
-  const [remoteUnreadCount, setRemoteUnreadCount] = useState<number | null>(null);
 
   // Usuário estático (__DEV__) não existe em profiles/auth - fica só no
   // mock local, como sempre funcionou.
   const isStaticUser = !!user?.id && user.id.startsWith('static-');
   const isConnected = !!user?.id && !isStaticUser;
+
+  const [notifications, setNotifications] = useState<AppNotification[]>(isStaticUser ? INITIAL_NOTIFICATIONS : []);
+  const [remoteUnreadCount, setRemoteUnreadCount] = useState<number | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  // Trocou de conta (ou entrou/saiu do login estático): começa do zero, sem
+  // herdar as notificações da conta anterior.
+  useEffect(() => {
+    setNotifications(isStaticUser ? INITIAL_NOTIFICATIONS : []);
+    setLoadError(false);
+  }, [user?.id, isStaticUser]);
 
   const refreshUnreadCount = useCallback((userId: string) => {
     getUnreadCount(userId).then(({ data, error }) => {
@@ -164,9 +177,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     getNotifications(user.id).then(({ data, error }) => {
       if (cancelled) return;
       if (error || !data) {
-        console.log('[notifications] getNotifications falhou, mantendo mock local ->', error);
+        console.log('[notifications] getNotifications falhou ->', error);
+        setLoadError(true);
         return;
       }
+      setLoadError(false);
       setNotifications(data.map(mapNotification));
     });
 
@@ -227,7 +242,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [isConnected, user?.id, refreshUnreadCount]);
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, addNotification, refresh }}>
+    <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, markAllAsRead, addNotification, refresh, loadError }}>
       {children}
     </NotificationContext.Provider>
   );
