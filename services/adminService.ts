@@ -16,7 +16,8 @@ export async function getStats(): Promise<ServiceResult<AdminStats>> {
   const [properties, bookings, users, pendingProperties, pendingReports] = await Promise.all([
     supabase.from('properties').select('*', { count: 'exact', head: true }),
     supabase.from('bookings').select('*', { count: 'exact', head: true }),
-    supabase.from('profiles').select('*', { count: 'exact', head: true }).is('deleted_at', null),
+    // select('id'), não '*': email/phone não são legíveis por SELECT (migração 007).
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).is('deleted_at', null),
     supabase.from('properties').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
     supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
   ]);

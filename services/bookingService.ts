@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { Booking, BookingWithProperty, NewBooking, ServiceResult, toResult } from './types';
+import { Booking, BookingForHost, BookingWithProperty, NewBooking, ServiceResult, toResult } from './types';
 
 // Acesso à tabela `bookings` (supabase/schema.sql). O próprio banco garante
 // check_out > check_in via CONSTRAINT valid_dates (schema.sql linha 159) -
@@ -41,16 +41,18 @@ export async function getBookingsByGuest(guestId: string): Promise<ServiceResult
   return toResult(data as unknown as BookingWithProperty[] | null, error);
 }
 
-export async function getBookingsByHost(hostId: string): Promise<ServiceResult<Booking[]>> {
+export async function getBookingsByHost(hostId: string): Promise<ServiceResult<BookingForHost[]>> {
   // bookings não tem host_id direto - vem de properties.owner_id. O "!inner"
   // faz o PostgREST tratar como inner join, permitindo filtrar a linha de
   // fora (bookings) pela coluna da tabela embutida (properties.owner_id).
+  // O hóspede vem de profiles pela FK bookings_guest_id_fkey (nome e avatar,
+  // para o anfitrião saber quem reservou).
   const { data, error } = await supabase
     .from('bookings')
-    .select('*, properties!inner(owner_id)')
+    .select('*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url)')
     .eq('properties.owner_id', hostId)
     .order('check_in', { ascending: false });
-  return toResult(data as unknown as Booking[] | null, error);
+  return toResult(data as unknown as BookingForHost[] | null, error);
 }
 
 export async function cancelBooking(id: string, reason?: string): Promise<ServiceResult<Booking>> {

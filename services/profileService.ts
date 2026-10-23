@@ -1,14 +1,28 @@
 import { File } from 'expo-file-system';
 import { supabase } from '../lib/supabase';
-import { Profile, ServiceResult, UserRole, toResult } from './types';
+import { Profile, PublicProfile, ServiceResult, UserRole, toResult } from './types';
 
 // Acesso à tabela `profiles` (supabase/schema.sql). updateRole() aqui é o
 // que falta pra context/AuthContext.tsx parar de trocar a role só em
 // memória (ver Tarefa 6).
+//
+// Migração 007: email e phone deixaram de ser legíveis por SELECT direto na
+// tabela (eram públicos pra qualquer um com a chave anon). Por isso nenhuma
+// query aqui usa `select('*')` nem `.select()` sem colunas - elas listam só
+// as colunas públicas - e o perfil completo do próprio usuário vem da função
+// get_my_profile().
+const PUBLIC_PROFILE_COLUMNS = 'id, name, avatar_url, role, bio, interests, created_at, updated_at, deleted_at';
 
-export async function getProfile(id: string): Promise<ServiceResult<Profile>> {
-  const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-  return toResult(data, error);
+/** Perfil completo (com e-mail e telefone) do usuário logado. */
+export async function getMyProfile(): Promise<ServiceResult<Profile>> {
+  const { data, error } = await supabase.rpc('get_my_profile').single();
+  return toResult(data as Profile | null, error);
+}
+
+/** Perfil público de qualquer usuário (sem e-mail/telefone). */
+export async function getProfile(id: string): Promise<ServiceResult<PublicProfile>> {
+  const { data, error } = await supabase.from('profiles').select(PUBLIC_PROFILE_COLUMNS).eq('id', id).single();
+  return toResult(data as PublicProfile | null, error);
 }
 
 /**
@@ -18,17 +32,20 @@ export async function getProfile(id: string): Promise<ServiceResult<Profile>> {
  * app/(tabs)/messages.tsx (nome/avatar de cada anfitrião distinto no
  * histórico de reservas do hóspede).
  */
-export async function getProfilesByIds(ids: string[]): Promise<ServiceResult<Profile[]>> {
+export async function getProfilesByIds(ids: string[]): Promise<ServiceResult<PublicProfile[]>> {
   if (ids.length === 0) return { data: [], error: null };
-  const { data, error } = await supabase.from('profiles').select('*').in('id', ids);
-  return toResult(data, error);
+  const { data, error } = await supabase.from('profiles').select(PUBLIC_PROFILE_COLUMNS).in('id', ids);
+  return toResult(data as PublicProfile[] | null, error);
 }
 
 export async function updateProfile(
   id: string,
   dados: Partial<Pick<Profile, 'name' | 'avatar_url' | 'phone' | 'bio' | 'interests'>>
-): Promise<ServiceResult<Profile>> {
-  const { data, error } = await supabase.from('profiles').update(dados).eq('id', id).select().single();
+): Promise<ServiceResult<{ id: string }>> {
+  // select('id') + single() mantém o erro quando nenhuma linha é afetada (perfil
+  // alheio / RLS). Não dá mais pra devolver a linha inteira (UPDATE ... RETURNING *
+  // lê email/phone): quem precisa do perfil atualizado chama refreshUser().
+  const { data, error } = await supabase.from('profiles').update(dados).eq('id', id).select('id').single();
   return toResult(data, error);
 }
 
@@ -85,12 +102,12 @@ export async function uploadAvatar(uri: string, userId: string): Promise<Service
 }
 
 /** Soft delete - grava profiles.deleted_at, não remove a linha nem o usuário do auth.users. */
-export async function deleteAccount(id: string): Promise<ServiceResult<Profile>> {
+export async function deleteAccount(id: string): Promise<ServiceResult<{ id: string }>> {
   const { data, error } = await supabase
     .from('profiles')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
+    .select('id')
     .single();
   return toResult(data, error);
 }

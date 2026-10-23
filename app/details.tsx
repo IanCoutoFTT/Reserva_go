@@ -35,7 +35,7 @@ import { getProfile } from '../services/profileService';
 import { getPropertyById } from '../services/propertyService';
 import { createReport } from '../services/reportService';
 import { getReviewsByProperty } from '../services/reviewService';
-import type { Profile, Property as DbProperty, ReviewWithAuthor } from '../services/types';
+import type { Property as DbProperty, PublicProfile, ReviewWithAuthor } from '../services/types';
 
 const REPORT_REASONS = [
   'Anúncio enganoso ou informação falsa',
@@ -114,7 +114,7 @@ export default function DetailsScreen() {
 
   // Anfitrião real (antes era 100% hardcoded: "Carlos Mendes" + foto fixa,
   // pra qualquer cabana). null enquanto carrega ou se o dono foi excluído.
-  const [hostProfile, setHostProfile] = useState<Profile | null>(null);
+  const [hostProfile, setHostProfile] = useState<PublicProfile | null>(null);
   const [contacting, setContacting] = useState(false);
 
   const [reportModalVisible, setReportModalVisible] = useState(false);

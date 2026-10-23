@@ -32,6 +32,12 @@ export interface Profile {
   deleted_at: string | null;
 }
 
+/**
+ * O que qualquer usuário (ou visitante) pode ler de um perfil. email e phone
+ * só o dono enxerga, via supabase.rpc('get_my_profile') (migração 007).
+ */
+export type PublicProfile = Omit<Profile, 'email' | 'phone'>;
+
 // ── properties ───────────────────────────────────────────────────────
 export interface Property {
   id: string;
@@ -105,6 +111,12 @@ export type NewBooking = Pick<
  */
 export interface BookingWithProperty extends Booking {
   properties: { title: string; location: string; images: string[]; owner_id: string } | null;
+}
+
+/** Reserva vista pelo anfitrião: cabana (título, local) e hóspede (nome, avatar) embutidos. */
+export interface BookingForHost extends Booking {
+  properties: { title: string; location: string; owner_id: string } | null;
+  guest: { name: string; avatar_url: string | null } | null;
 }
 
 // ── favorites ────────────────────────────────────────────────────────

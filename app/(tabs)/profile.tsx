@@ -18,6 +18,7 @@ import { GuestDashboard, PastTrip } from '../../components/profile/GuestDashboar
 import { PRIVACY_SECTIONS, TERMS_SECTIONS } from '../../components/profile/profileContent';
 import { updateProfile, uploadAvatar } from '../../services/profileService';
 import { getBookingsByGuest } from '../../services/bookingService';
+import { effectiveStatus } from '../../lib/booking';
 import { getReviewCountByAuthor } from '../../services/reviewService';
 
 const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=11';
@@ -76,7 +77,8 @@ export default function ProfileScreen() {
 
         // getBookingsByGuest já vem ordenado por check_in desc (bookingService.ts)
         // - as 10 primeiras concluídas do carrossel já são as mais recentes.
-        const completed = (bookingsRes.data ?? []).filter((b) => b.status === 'realizada');
+        // 'realizada' nunca é gravado no banco - conta pela data (lib/booking.ts).
+        const completed = (bookingsRes.data ?? []).filter((b) => effectiveStatus(b) === 'realizada');
         setGuestTripsCount(completed.length);
         setGuestPastTrips(
           completed.slice(0, 10).map((b) => ({

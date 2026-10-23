@@ -116,7 +116,9 @@ describe('bookingService.getBookingsByHost', () => {
 
     await getBookingsByHost('host-1');
 
-    expect(builder.select).toHaveBeenCalledWith('*, properties!inner(owner_id)');
+    expect(builder.select).toHaveBeenCalledWith(
+      '*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url)'
+    );
     expect(builder.eq).toHaveBeenCalledWith('properties.owner_id', 'host-1');
   });
 });

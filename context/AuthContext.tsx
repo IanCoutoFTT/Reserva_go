@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { deleteAccount as deleteAccountInDb, updateRole as updateRoleInDb } from '../services/profileService';
+import type { Profile as DbProfile } from '../services/types';
 
 // Preferência do usuário (por dispositivo, não por conta) sobre manter ou não
 // a sessão do Google salva entre aberturas do app - perguntada em
@@ -102,11 +103,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // que o profile existe assim que o usuário é criado em auth.users.
   const loadProfileForSession = async (activeSession: Session) => {
     console.log('[auth] carregando profile para usuário', activeSession.user.id);
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('id, name, email, avatar_url, role, bio, interests, phone, created_at')
-      .eq('id', activeSession.user.id)
-      .single();
+    // email e phone não são mais legíveis por SELECT na tabela (migração 007);
+    // o próprio usuário recebe o perfil completo pela função get_my_profile().
+    let { data: profile, error } = await supabase.rpc('get_my_profile').single<DbProfile>();
+
+    // PGRST202 = a função ainda não existe: este banco não recebeu a migração
+    // 007. Nesse caso (e só nesse) usa a leitura direta de antes, que ainda
+    // funciona enquanto email/phone estiverem liberados na tabela.
+    if (error?.code === 'PGRST202') {
+      console.log('[auth] get_my_profile ausente (migração 007 pendente) - usando leitura direta');
+      ({ data: profile, error } = (await supabase
+        .from('profiles')
+        .select('id, name, email, avatar_url, role, bio, interests, phone, created_at')
+        .eq('id', activeSession.user.id)
+        .single()) as unknown as { data: DbProfile | null; error: typeof error });
+    }
 
     // PGRST116 = nenhuma linha visível: a conta foi excluída (profiles.deleted_at
     // esconde a linha via RLS) ou nunca teve perfil. Não dá pra deixar entrar

@@ -18,6 +18,10 @@ jest.mock('@supabase/supabase-js', () => ({
       onAuthStateChange: jest.fn(),
       signOut: jest.fn(),
     },
+    // O perfil próprio vem de rpc('get_my_profile').single() (migração 007).
+    rpc: jest.fn(() => ({
+      single: jest.fn().mockResolvedValue({ data: null, error: null }),
+    })),
     from: jest.fn(() => ({
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
@@ -242,9 +246,7 @@ describe('AuthContext', () => {
       });
       return { data: { subscription: { unsubscribe: jest.fn() } } };
     });
-    (supabase.from as jest.Mock).mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
+    (supabase.rpc as jest.Mock).mockReturnValueOnce({
       single: jest.fn().mockResolvedValue({
         data: {
           id: 'real-user-uuid',
@@ -283,9 +285,7 @@ describe('AuthContext', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    (supabase.from as jest.Mock).mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
+    (supabase.rpc as jest.Mock).mockReturnValueOnce({
       single: jest.fn().mockResolvedValue({
         data: {
           id: 'real-user-uuid',
@@ -318,19 +318,17 @@ describe('AuthContext', () => {
       await result.current.login('hospede@reservago.com', '1234');
     });
 
-    const fromCallsBefore = (supabase.from as jest.Mock).mock.calls.length;
+    const rpcCallsBefore = (supabase.rpc as jest.Mock).mock.calls.length;
 
     await act(async () => {
       await result.current.refreshUser();
     });
 
-    expect((supabase.from as jest.Mock).mock.calls.length).toBe(fromCallsBefore);
+    expect((supabase.rpc as jest.Mock).mock.calls.length).toBe(rpcCallsBefore);
   });
 
   it('conta excluída (perfil escondido pela RLS, PGRST116): encerra a sessão em vez de entrar como hóspede', async () => {
-    (supabase.from as jest.Mock).mockReturnValueOnce({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
+    (supabase.rpc as jest.Mock).mockReturnValueOnce({
       single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116', message: 'no rows' } }),
     });
     mockOnAuthStateChange.mockImplementation((callback: (event: string, session: any) => void) => {
@@ -344,5 +342,40 @@ describe('AuthContext', () => {
     expect(result.current.user).toBeNull();
     expect(mockSignOut).toHaveBeenCalled();
     expect(Alert.alert).toHaveBeenCalledWith('Conta indisponível', expect.any(String));
+  });
+
+  it('banco sem a migração 007 (get_my_profile inexistente, PGRST202): cai na leitura direta e mantém a role real', async () => {
+    (supabase.rpc as jest.Mock).mockReturnValueOnce({
+      single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'function not found' } }),
+    });
+    (supabase.from as jest.Mock).mockReturnValueOnce({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: {
+          id: 'real-user-uuid',
+          name: 'Admin Real',
+          email: 'admin@real.com',
+          avatar_url: null,
+          role: 'admin',
+          bio: null,
+          interests: [],
+          phone: null,
+          created_at: '2024-01-01T00:00:00.000Z',
+        },
+        error: null,
+      }),
+    });
+    mockOnAuthStateChange.mockImplementation((callback: (event: string, session: any) => void) => {
+      callback('SIGNED_IN', { user: { id: 'real-user-uuid', email: 'admin@real.com', user_metadata: {} } });
+      return { data: { subscription: { unsubscribe: jest.fn() } } };
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.user?.role).toBe('admin');
+    expect(result.current.user?.email).toBe('admin@real.com');
+    expect(mockSignOut).not.toHaveBeenCalled();
   });
 });
