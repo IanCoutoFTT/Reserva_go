@@ -1,0 +1,121 @@
+Resultado ANTES - repositório como veio no zip (schema + migrações 001-007) - 29/10/2026
+Gerado com: supabase/tests/security_tests.sql (113 cenários) em PostgreSQL 16 + supabase/tests/local_supabase_shim.sql
+Resumo: 77 ok, 36 falhas
+
+  #  |      area      |                                   teste                                    | esperado  |  obtido   | ok |                                      detalhe                                      
+-----+----------------+----------------------------------------------------------------------------+-----------+-----------+----+-----------------------------------------------------------------------------------
+  10 | perfis         | Trocar o próprio e-mail do perfil (e-mail vem do login Google)             | bloqueado | permitido | f  | 
+  11 | perfis         | Gravar avatar_url com esquema perigoso (javascript:/http:)                 | bloqueado | permitido | f  | 
+  12 | perfis         | Gravar bio gigante (1 MB) - abuso de armazenamento                         | bloqueado | permitido | f  | 
+  13 | perfis         | Excluir a própria conta (RPC delete_my_account, usada pelo app)            | permitido | bloqueado | f  | function delete_my_account() does not exist
+  20 | cabanas        | Hóspede (não anfitrião) publica cabana                                     | bloqueado | permitido | f  | 
+  26 | cabanas        | Anfitrião define preço negativo                                            | bloqueado | permitido | f  | 
+  27 | cabanas        | Anfitrião grava imagem com URL não-HTTPS                                   | bloqueado | permitido | f  | 
+  37 | reservas       | Bloquear o calendário: reserva de 300 noites                               | bloqueado | permitido | f  | 
+  38 | reservas       | Bloquear o calendário: reserva para daqui a 3 anos                         | bloqueado | permitido | f  | 
+  39 | reservas       | Bloquear o calendário: 10 reservas seguidas sem pagar                      | bloqueado | permitido | f  | 
+  58 | mensagens      | Phishing: abrir conversa fingindo ser o anfitrião de cabana alheia         | bloqueado | permitido | f  | 
+  59 | mensagens      | Abrir "suporte" com usuário comum no lugar do admin                        | bloqueado | permitido | f  | 
+  63 | mensagens      | Mensagem gigante (1 MB) - abuso/spam                                       | bloqueado | permitido | f  | 
+  77 | denúncias      | Abrir denúncia já "resolvida" e assinada por um admin                      | bloqueado | permitido | f  | 
+  81 | denúncias      | Admin assina a resolução com o nome de outro admin                         | bloqueado | permitido | f  | 
+  88 | storage        | Hóspede (não anfitrião) envia arquivo ao bucket de cabanas                 | bloqueado | permitido | f  | 
+  90 | storage        | Bucket "avatars" aceita qualquer tipo/tamanho de arquivo (ex.: .html)      | bloqueado | permitido | f  | allowed_mime_types=NULL file_size_limit=NULL
+  91 | storage        | Bucket "properties" aceita qualquer tipo/tamanho de arquivo (ex.: .html)   | bloqueado | permitido | f  | allowed_mime_types=NULL file_size_limit=NULL
+  92 | funções        | SECURITY DEFINER sem search_path fixo: create_notification                 | bloqueado | permitido | f  | função roda como dono do banco e resolve nomes pelo search_path de quem chama
+  93 | conta excluída | Conta excluída faz reserva                                                 | bloqueado | permitido | f  | 
+  94 | conta excluída | Conta excluída envia mensagem no chat                                      | bloqueado | permitido | f  | 
+  95 | conta excluída | Conta excluída abre conversa nova                                          | bloqueado | permitido | f  | 
+  96 | conta excluída | Conta excluída envia denúncia                                              | bloqueado | permitido | f  | 
+  97 | conta excluída | Conta excluída salva favorito                                              | bloqueado | permitido | f  | 
+  98 | conta excluída | Conta excluída envia arquivo de avatar                                     | bloqueado | permitido | f  | 
+  99 | conta excluída | Conta excluída troca de role via set_own_role()                            | bloqueado | permitido | f  | 
+ 100 | conta excluída | Anfitrião excluído publica cabana nova                                     | bloqueado | permitido | f  | 
+ 101 | conta excluída | Visitante vê cabana de anfitrião que excluiu a conta                       | bloqueado | permitido | f  | 
+ 102 | conta excluída | Hóspede reserva cabana de anfitrião que excluiu a conta                    | bloqueado | permitido | f  | 
+ 103 | conta excluída | Excluir conta de hóspede libera as datas das reservas futuras              | permitido | bloqueado | f  | function delete_my_account() does not exist
+ 104 | conta excluída | Excluir conta de anfitrião tira as cabanas do ar                           | permitido | bloqueado | f  | function delete_my_account() does not exist
+ 105 | moderação      | Anfitrião troca título/descrição/fotos de cabana aprovada sem nova análise | bloqueado | permitido | f  | 
+ 107 | moderação      | Anfitrião edita cabana e ela volta para análise (fluxo do app)             | permitido | bloqueado | f  | 
+ 108 | perfis         | Usuário comum se chama "Suporte ReservaGO" (golpe no chat)                 | bloqueado | permitido | f  | 
+ 109 | perfis         | Usuário comum se chama "Admin"                                             | bloqueado | permitido | f  | 
+ 111 | reservas       | Hóspede cancela estadia já concluída                                       | bloqueado | permitido | f  | 
+   1 | perfis         | Visitante sem login lê e-mail/telefone de usuários                         | bloqueado | bloqueado | t  | permission denied for table profiles
+   2 | perfis         | Usuário logado lê telefone de outra pessoa                                 | bloqueado | bloqueado | t  | permission denied for table profiles
+   3 | perfis         | Usuário lê o próprio perfil completo via get_my_profile()                  | permitido | permitido | t  | 
+   4 | perfis         | Promover a si mesmo a admin com UPDATE direto                              | bloqueado | bloqueado | t  | new row violates row-level security policy for table "profiles"
+   5 | perfis         | Promover a si mesmo a admin via set_own_role()                             | bloqueado | bloqueado | t  | Não é permitido definir a própria role como admin
+   6 | perfis         | Trocar a própria role para anfitrião via set_own_role()                    | permitido | permitido | t  | 
+   7 | perfis         | Visitante sem login chama set_own_role()                                   | bloqueado | bloqueado | t  | 
+   8 | perfis         | Editar nome do perfil de outra pessoa                                      | bloqueado | bloqueado | t  | 
+   9 | perfis         | Editar o próprio nome/bio (tela Editar Perfil)                             | permitido | permitido | t  | 
+  14 | perfis         | Reativar/forjar deleted_at com UPDATE direto                               | bloqueado | bloqueado | t  | 
+  15 | perfis         | (antigo) Excluir conta com UPDATE direto - o jeito que o app usava         | bloqueado | bloqueado | t  | new row violates row-level security policy for table "profiles"
+  16 | cabanas        | Visitante vê cabana ainda pendente de aprovação                            | bloqueado | bloqueado | t  | 
+  17 | cabanas        | Visitante vê cabana ativa (Explorar)                                       | permitido | permitido | t  | 
+  18 | cabanas        | Anfitrião cria cabana já "ativo" e em destaque                             | bloqueado | bloqueado | t  | 
+  19 | cabanas        | Anfitrião cria cabana normal (fica pendente)                               | permitido | permitido | t  | 
+  21 | cabanas        | Anfitrião aprova a própria cabana (status ativo)                           | bloqueado | bloqueado | t  | 
+  22 | cabanas        | Anfitrião infla nota/contadores da própria cabana                          | bloqueado | bloqueado | t  | 
+  23 | cabanas        | Anfitrião transfere a cabana para outro dono                               | bloqueado | bloqueado | t  | 
+  24 | cabanas        | Anfitrião edita título/preço da própria cabana                             | permitido | permitido | t  | 
+  25 | cabanas        | Anfitrião "exclui" a própria cabana (status removido)                      | permitido | permitido | t  | 
+  28 | cabanas        | Usuário comum edita cabana de outra pessoa                                 | bloqueado | bloqueado | t  | 
+  29 | cabanas        | Admin aprova cabana pendente                                               | permitido | permitido | t  | 
+  30 | cabanas        | Admin com conta EXCLUÍDA ainda aprova cabana                               | bloqueado | bloqueado | t  | 
+  31 | cabanas        | Admin com conta EXCLUÍDA ainda lê cabanas pendentes                        | bloqueado | bloqueado | t  | 
+  32 | reservas       | Hóspede reserva pagando R$ 1,00 (total vindo do app)                       | bloqueado | bloqueado | t  | 
+  33 | reservas       | Hóspede faz reserva normal (preço calculado no banco)                      | permitido | permitido | t  | 
+  34 | reservas       | Reservar em nome de outra pessoa (guest_id alheio)                         | bloqueado | bloqueado | t  | new row violates row-level security policy for table "bookings"
+  35 | reservas       | Reservar cabana que ainda não foi aprovada                                 | bloqueado | bloqueado | t  | Esta cabana não está disponível para reserva.
+  36 | reservas       | Reservar datas que já estão ocupadas (sobreposição)                        | bloqueado | bloqueado | t  | conflicting key value violates exclusion constraint "bookings_no_overlap"
+  40 | reservas       | Anfitrião reserva a própria cabana (inflar contadores)                     | bloqueado | bloqueado | t  | Você não pode reservar o seu próprio anúncio.
+  41 | reservas       | Ler a reserva de outro hóspede                                             | bloqueado | bloqueado | t  | 
+  42 | reservas       | Anfitrião vê reservas da própria cabana                                    | permitido | permitido | t  | 
+  43 | reservas       | Cancelar a reserva de outro hóspede                                        | bloqueado | bloqueado | t  | 
+  44 | reservas       | Hóspede altera total/datas da própria reserva                              | bloqueado | bloqueado | t  | 
+  45 | reservas       | Hóspede marca reserva futura como "realizada"                              | bloqueado | bloqueado | t  | 
+  46 | reservas       | Hóspede cancela a própria reserva                                          | permitido | permitido | t  | 
+  47 | favoritos      | Adicionar favorito na conta de outra pessoa                                | bloqueado | bloqueado | t  | new row violates row-level security policy for table "favorites"
+  48 | favoritos      | Favoritar uma cabana (uso normal)                                          | permitido | permitido | t  | 
+  49 | avaliações     | Avaliar cabana sem nunca ter se hospedado                                  | bloqueado | bloqueado | t  | new row violates row-level security policy for table "reviews"
+  50 | avaliações     | Avaliar usando a reserva de OUTRA pessoa                                   | bloqueado | bloqueado | t  | new row violates row-level security policy for table "reviews"
+  51 | avaliações     | Avaliar antes da estadia acontecer                                         | bloqueado | bloqueado | t  | new row violates row-level security policy for table "reviews"
+  52 | avaliações     | Avaliar estadia encerrada (uso normal)                                     | permitido | permitido | t  | 
+  53 | avaliações     | Avaliar a mesma estadia duas vezes                                         | bloqueado | bloqueado | t  | duplicate key value violates unique constraint "reviews_booking_id_author_id_key"
+  54 | avaliações     | Nota fora da escala (rating = 6)                                           | bloqueado | bloqueado | t  | new row for relation "reviews" violates check constraint "reviews_rating_check"
+  55 | mensagens      | Ler mensagens de uma conversa alheia                                       | bloqueado | bloqueado | t  | 
+  56 | mensagens      | Enviar mensagem dentro de conversa alheia                                  | bloqueado | bloqueado | t  | new row violates row-level security policy for table "messages"
+  57 | mensagens      | Enviar mensagem se passando pelo anfitrião (sender_id falso)               | bloqueado | bloqueado | t  | new row violates row-level security policy for table "messages"
+  60 | mensagens      | Hóspede abre conversa com o dono da cabana (botão Contato)                 | permitido | permitido | t  | 
+  61 | mensagens      | Hóspede abre conversa de suporte com o admin                               | permitido | permitido | t  | 
+  62 | mensagens      | Enviar mensagem na própria conversa (gera notificação)                     | permitido | permitido | t  | 
+  64 | mensagens      | Reescrever o texto de uma mensagem recebida                                | bloqueado | bloqueado | t  | 
+  65 | mensagens      | Marcar como lida mensagem recebida (uso normal)                            | permitido | permitido | t  | 
+  66 | mensagens      | Marcar como lida mensagem de conversa alheia                               | bloqueado | bloqueado | t  | 
+  67 | mensagens      | Alterar last_message de uma conversa diretamente                           | bloqueado | bloqueado | t  | 
+  68 | notificações   | Criar notificação falsa para outro usuário via create_notification()       | bloqueado | bloqueado | t  | permission denied for function create_notification
+  69 | notificações   | Inserir notificação direto na tabela                                       | bloqueado | bloqueado | t  | new row violates row-level security policy for table "notifications"
+  70 | notificações   | Ler notificações de outro usuário                                          | bloqueado | bloqueado | t  | 
+  71 | notificações   | Contar não lidas de outro usuário via RPC                                  | bloqueado | bloqueado | t  | 
+  72 | notificações   | Marcar como lidas as notificações de outro usuário via RPC                 | bloqueado | bloqueado | t  | 
+  73 | notificações   | Anfitrião marca as próprias notificações como lidas                        | permitido | permitido | t  | 
+  74 | notificações   | Alterar o texto de uma notificação própria                                 | bloqueado | bloqueado | t  | 
+  75 | denúncias      | Ler a denúncia feita por outra pessoa                                      | bloqueado | bloqueado | t  | 
+  76 | denúncias      | Abrir denúncia em nome de outra pessoa                                     | bloqueado | bloqueado | t  | new row violates row-level security policy for table "reports"
+  78 | denúncias      | Abrir denúncia (uso normal, avisa os admins)                               | permitido | permitido | t  | 
+  79 | denúncias      | Usuário comum altera status de denúncia                                    | bloqueado | bloqueado | t  | 
+  80 | denúncias      | Admin resolve denúncia (quem denunciou é avisado)                          | permitido | permitido | t  | 
+  82 | admin          | Usuário comum lê todas as reservas da plataforma                           | bloqueado | bloqueado | t  | 
+  83 | admin          | Admin lê todas as reservas (painel)                                        | permitido | permitido | t  | 
+  84 | storage        | Enviar foto para a pasta de avatar de outra pessoa                         | bloqueado | bloqueado | t  | new row violates row-level security policy for table "objects"
+  85 | storage        | Enviar o próprio avatar (uso normal)                                       | permitido | permitido | t  | 
+  86 | storage        | Sobrescrever/mover o avatar de outra pessoa                                | bloqueado | bloqueado | t  | 
+  87 | storage        | Apagar o avatar de outra pessoa                                            | bloqueado | bloqueado | t  | 
+  89 | storage        | Anfitrião envia foto da própria cabana                                     | permitido | permitido | t  | 
+ 106 | moderação      | Anfitrião muda só o preço de cabana aprovada (continua no ar)              | permitido | permitido | t  | 
+ 110 | perfis         | Nome comum com acento continua permitido ("Adriana Mônica")                | permitido | permitido | t  | 
+ 112 | mensagens      | Abrir 2ª conversa de suporte com o mesmo admin                             | bloqueado | bloqueado | t  | duplicate key value violates unique constraint "conversations_unique_no_property"
+ 113 | mensagens      | Abrir a 1ª conversa de suporte (uso normal)                                | permitido | permitido | t  | 
+(113 rows)
+

@@ -1,4 +1,4 @@
-import { effectiveStatus, stayEnded, todayISO } from '../booking';
+import { canCancelStay, effectiveStatus, stayEnded, todayISO } from '../booking';
 
 const agora = new Date(2026, 9, 22, 15, 30); // 22/10/2026 15:30, horário local
 
@@ -38,5 +38,16 @@ describe('effectiveStatus', () => {
 
   it('realizada gravada no banco é respeitada', () => {
     expect(effectiveStatus({ status: 'realizada', check_out: '2026-12-01' }, agora)).toBe('realizada');
+  });
+});
+
+describe('canCancelStay (T-05, 3º teste de segurança)', () => {
+  const now = new Date(2026, 9, 29, 15, 0); // 29/10/2026
+  it('permite cancelar antes e no dia do check-in', () => {
+    expect(canCancelStay('2026-11-10', now)).toBe(true);
+    expect(canCancelStay('2026-10-29', now)).toBe(true);
+  });
+  it('não permite depois que a estadia começou', () => {
+    expect(canCancelStay('2026-10-28', now)).toBe(false);
   });
 });

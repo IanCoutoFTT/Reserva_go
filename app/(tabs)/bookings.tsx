@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router';
 import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../services/bookingService';
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
-import { stayEnded } from '../../lib/booking';
+import { canCancelStay, stayEnded } from '../../lib/booking';
 import { PropertyImage } from '../../components/PropertyImage';
 
 // Linha unificada de exibição - pode vir de uma reserva real (Supabase,
@@ -25,6 +25,7 @@ type BookingRow = {
   status: string;
   checkInLabel: string;
   checkOutLabel: string;
+  checkInIso?: string;
   checkOutIso?: string;
   nights?: number;
   total?: number;
@@ -87,6 +88,7 @@ export default function BookingsScreen() {
       status: b.status,
       checkInLabel: isoToBR(b.check_in),
       checkOutLabel: isoToBR(b.check_out),
+      checkInIso: b.check_in,
       checkOutIso: b.check_out,
       nights: b.nights,
       total: b.total,
@@ -152,6 +154,8 @@ export default function BookingsScreen() {
     // pela data (lib/booking.ts) - sem botão Cancelar e com o rótulo "Realizada".
     const ended = !!item.checkOutIso && stayEnded(item.checkOutIso);
     const isActive = item.status === 'reservada' && !ended;
+    // Estadia em andamento continua "Confirmada", mas não pode mais ser cancelada (T-05).
+    const canCancel = isActive && (!item.checkInIso || canCancelStay(item.checkInIso));
     const canReview = item.isReal && item.status !== 'cancelada' && ended;
 
     return (
@@ -195,7 +199,7 @@ export default function BookingsScreen() {
             </View>
           )}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {isActive && (
+            {canCancel && (
               <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item)}>
                 <X size={12} color="#EF4444" />
                 <Text style={styles.cancelBtnText}>Cancelar reserva</Text>

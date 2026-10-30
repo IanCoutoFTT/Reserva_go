@@ -1,3 +1,6 @@
+// Primeiro import de propósito: desliga console.log/info/debug em produção
+// antes de qualquer outro módulo rodar (teste de segurança 29/10/2026, S-14).
+import '../lib/productionLogs';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';

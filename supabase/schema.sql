@@ -2,6 +2,11 @@
 -- RESERVAGO — Schema Supabase Completo
 -- Gerado a partir da análise do código-fonte do app
 -- Execute este arquivo no SQL Editor do Supabase
+--
+-- ATENÇÃO: este arquivo é a BASE. O estado final do banco é este schema +
+-- supabase/migrations/001 a 009, aplicadas EM ORDEM (as migrações 006, 008 e
+-- 009 trazem as correções dos testes de segurança - docs/relatorio-seguranca.md).
+-- Conferência: supabase/tests/security_tests.sql (todas as linhas ok = true).
 -- ============================================================
 
 -- Habilitar extensões necessárias

@@ -1,4 +1,5 @@
 import { File } from 'expo-file-system';
+import { imageTypeFromUri } from '../lib/imageType';
 import { supabase } from '../lib/supabase';
 import { Profile, PublicProfile, ServiceResult, UserRole, toResult } from './types';
 
@@ -84,13 +85,14 @@ export async function updateRole(role: UserRole): Promise<ServiceResult<Profile>
  */
 export async function uploadAvatar(uri: string, userId: string): Promise<ServiceResult<string>> {
   try {
-    const fileExt = uri.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
+    // S-03: content-type real (os buckets só aceitam imagem - migração 008).
+    const { ext: fileExt, contentType } = imageTypeFromUri(uri);
     const path = `${userId}/${Date.now()}.${fileExt}`;
     const arrayBuffer = await new File(uri).arrayBuffer();
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
-      .upload(path, arrayBuffer, { contentType: `image/${fileExt}`, upsert: false });
+      .upload(path, arrayBuffer, { contentType, upsert: false });
 
     if (uploadError) return { data: null, error: uploadError.message };
 
@@ -101,13 +103,17 @@ export async function uploadAvatar(uri: string, userId: string): Promise<Service
   }
 }
 
-/** Soft delete - grava profiles.deleted_at, não remove a linha nem o usuário do auth.users. */
+/**
+ * Exclui a própria conta (soft delete) pela função delete_my_account()
+ * (migrações 008/009). Teste de segurança 29/10/2026 (S-08): antes isso era um
+ * UPDATE direto em deleted_at, que a RLS sempre recusava ("new row violates
+ * row-level security policy") - o botão nunca funcionou. A função marca
+ * deleted_at, apaga telefone/bio/interesses, cancela as reservas futuras e
+ * tira do ar as cabanas do usuário. Só age sobre quem está logado: o `id` é
+ * mantido na assinatura para não mudar quem chama e é devolvido no sucesso.
+ */
 export async function deleteAccount(id: string): Promise<ServiceResult<{ id: string }>> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('id')
-    .single();
-  return toResult(data, error);
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) return toResult<{ id: string }>(null, error);
+  return { data: { id }, error: null };
 }
