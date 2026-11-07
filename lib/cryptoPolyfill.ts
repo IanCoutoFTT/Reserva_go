@@ -1,30 +1,23 @@
-// Polyfill de `crypto` (getRandomValues + subtle.digest('SHA-256')) em
-// JavaScript puro, sem nenhuma dependência nativa nova (não precisa gerar
-// build novo do EAS).
+// Polyfill de `crypto` (getRandomValues + subtle.digest('SHA-256')) para o
+// Hermes/React Native, onde o global `crypto` não existe.
 //
-// Descoberta em depuração (2026-09-03): nesse ambiente Hermes/React Native,
-// o global `crypto` não existe DE JEITO NENHUM (não é só `.subtle` faltando,
-// como o comentário antigo em lib/supabase.ts sugeria) - confirmado com
-// `typeof globalThis.crypto` logando "undefined". O
-// @supabase/auth-js (generatePKCEVerifier, em
-// node_modules/@supabase/auth-js/dist/main/lib/helpers.js) já tem um
-// fallback pra gerar o code_verifier sem crypto (usando Math.random), então
-// o login nunca travava por causa disso - mas sem crypto.subtle, o
-// code_challenge_method sempre caía pra 'plain'. Suspeita confirmada: o
-// servidor de Auth do Supabase rejeita a troca do código por sessão com
-// "invalid flow state, no valid flow state found" quando o method é 'plain'
-// (mesmo com o code_verifier certinho no client) - por isso essa troca nunca
-// completava.
-//
-// Este arquivo cobre as duas partes que faltam:
-// - getRandomValues: preenche o array com bytes pseudo-aleatórios via
-//   Math.random() - mesmo nível de aleatoriedade que o fallback que o SDK já
-//   usava por conta própria, só que exposto no formato certo da WebCrypto API.
+// Descoberta em depuração (2026-09-03): sem crypto.subtle, o
+// @supabase/auth-js manda code_challenge_method 'plain' e o servidor de Auth
+// do Supabase recusa a troca do código ("invalid flow state"). Por isso este
+// arquivo instala:
 // - subtle.digest('SHA-256', ...): SHA-256 puro em JS (FIPS 180-4), com
-//   auto-teste contra os vetores de teste oficiais (SHA-256("") e
-//   SHA-256("abc")) na inicialização. Se o auto-teste falhar, o polyfill NÃO
-//   é instalado - o app cai pro 'plain' de antes, em vez de arriscar mandar
-//   um hash errado pro servidor.
+//   auto-teste contra os vetores oficiais (SHA-256("") e SHA-256("abc")) na
+//   inicialização. Se o auto-teste falhar, o polyfill NÃO é instalado.
+// - getRandomValues: vem do expo-crypto (gerador criptográfico do sistema
+//   operacional).
+//
+// Teste de segurança 29/10/2026 (S-12): a versão anterior preenchia
+// getRandomValues com Math.random(), que NÃO é criptograficamente seguro, e
+// instalava isso como `crypto.getRandomValues` GLOBAL - qualquer biblioteca
+// que confiasse nessa API (inclusive o code_verifier do PKCE) recebia números
+// previsíveis. Agora, se o módulo nativo do expo-crypto não estiver no
+// binário, getRandomValues simplesmente não é instalado (nunca cai para
+// Math.random). O SHA-256 continua sendo instalado nesse caso.
 
 const K = [
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -113,12 +106,26 @@ function selfTestPasses(): boolean {
   );
 }
 
-function fakeGetRandomValues<T extends ArrayBufferView>(array: T): T {
-  const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
-  for (let i = 0; i < view.length; i++) {
-    view[i] = Math.floor(Math.random() * 256);
+type SecureRandom = <T extends ArrayBufferView>(array: T) => T;
+
+// require dentro de try: num binário antigo (dev build gerado antes de
+// adicionar o expo-crypto) o módulo nativo não existe e o import lança erro.
+function loadSecureGetRandomValues(): SecureRandom | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ExpoCrypto = require('expo-crypto');
+    if (typeof ExpoCrypto?.getRandomValues !== 'function') return null;
+    return ((array: ArrayBufferView) => {
+      // expo-crypto aceita só TypedArray inteiro; DataView/outros viram Uint8Array na mesma memória.
+      const view = ArrayBuffer.isView(array) && !(array instanceof DataView)
+        ? array
+        : new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      ExpoCrypto.getRandomValues(view);
+      return array;
+    }) as SecureRandom;
+  } catch {
+    return null;
   }
-  return array;
 }
 
 export function installCryptoSubtlePolyfillIfNeeded(): void {
@@ -141,11 +148,12 @@ export function installCryptoSubtlePolyfillIfNeeded(): void {
 
   if (!g.crypto) g.crypto = {};
   if (typeof g.crypto.getRandomValues !== 'function') {
-    // Mesmo nível de aleatoriedade que o fallback que o @supabase/auth-js já
-    // usava sozinho (Math.random) quando crypto não existe - só formatado
-    // como a API de verdade, pra generatePKCEVerifier tomar esse caminho em
-    // vez do fallback dele (que não afeta segurança: já era Math.random).
-    g.crypto.getRandomValues = fakeGetRandomValues;
+    const secure = loadSecureGetRandomValues();
+    if (secure) {
+      g.crypto.getRandomValues = secure;
+    } else {
+      console.warn('[cryptoPolyfill] expo-crypto indisponível neste binário - getRandomValues NÃO instalado (gere um build novo).');
+    }
   }
   if (!g.crypto.subtle || typeof g.crypto.subtle.digest !== 'function') {
     g.crypto.subtle = {
@@ -158,5 +166,5 @@ export function installCryptoSubtlePolyfillIfNeeded(): void {
       },
     };
   }
-  console.log('[cryptoPolyfill] crypto.getRandomValues + crypto.subtle.digest (SHA-256) instalados - PKCE deve usar "s256" agora.');
+  console.log('[cryptoPolyfill] crypto.subtle.digest (SHA-256) instalado - PKCE deve usar "s256" agora.');
 }

@@ -1,9 +1,25 @@
 import { File } from 'expo-file-system';
+import { imageTypeFromUri } from '../lib/imageType';
 import { supabase } from '../lib/supabase';
 import { NewProperty, Property, PropertyFilters, ServiceResult, toResult } from './types';
 
 // Acesso à tabela `properties` (supabase/schema.sql). Nenhuma lógica de UI
 // aqui - só monta a query e devolve { data, error }.
+
+/**
+ * Teste de segurança 29/10/2026 (S-15): o texto digitado ia direto para dentro
+ * do filtro `.or(...)` do PostgREST. Vírgula, parênteses e ponto mudam a
+ * estrutura do filtro (dá para injetar condições como `status.eq.pendente`).
+ * Remove os caracteres de sintaxe e curingas e limita o tamanho.
+ */
+export function sanitizeSearchTerm(raw?: string | null): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[,().:"'\\%*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
 
 export async function getProperties(filtros?: PropertyFilters): Promise<ServiceResult<Property[]>> {
   let query = supabase.from('properties').select('*').eq('status', filtros?.status ?? 'ativo');
@@ -13,10 +29,11 @@ export async function getProperties(filtros?: PropertyFilters): Promise<ServiceR
   if (filtros?.isolationLevel) query = query.eq('isolation_level', filtros.isolationLevel);
   if (filtros?.maxPrice !== undefined) query = query.lte('price', filtros.maxPrice);
   if (filtros?.minPrice !== undefined) query = query.gte('price', filtros.minPrice);
-  if (filtros?.search) {
+  const search = sanitizeSearchTerm(filtros?.search);
+  if (search) {
     // idx_properties_search (gin/to_tsvector) cobre title+location; ilike
     // simples aqui pra não depender de sintaxe de full-text no client.
-    query = query.or(`title.ilike.%${filtros.search}%,location.ilike.%${filtros.search}%`);
+    query = query.or(`title.ilike.%${search}%,location.ilike.%${search}%`);
   }
 
   const { data, error } = await query.order('created_at', { ascending: false });
@@ -113,13 +130,14 @@ export async function deleteProperty(id: string): Promise<ServiceResult<Property
  */
 export async function uploadPropertyImage(uri: string, ownerId: string): Promise<ServiceResult<string>> {
   try {
-    const fileExt = uri.split('.').pop()?.split('?')[0]?.toLowerCase() || 'jpg';
+    // S-03: content-type real (os buckets só aceitam imagem - migração 008).
+    const { ext: fileExt, contentType } = imageTypeFromUri(uri);
     const path = `${ownerId}/${Date.now()}.${fileExt}`;
     const arrayBuffer = await new File(uri).arrayBuffer();
 
     const { error: uploadError } = await supabase.storage
       .from('properties')
-      .upload(path, arrayBuffer, { contentType: `image/${fileExt}`, upsert: false });
+      .upload(path, arrayBuffer, { contentType, upsert: false });
 
     if (uploadError) return { data: null, error: uploadError.message };
 

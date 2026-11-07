@@ -31,7 +31,12 @@ const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf37
 // Usuários estáticos de dev (__DEV__) não têm linha em `profiles` - por isso
 // bio/interests/phone/memberSince ficam vazios/null aqui, sempre. Editar
 // perfil pra esses continua só em memória (ver comentário em profile.tsx).
-const STATIC_USERS: { email: string; password: string; user: AppUser }[] = [
+//
+// Teste de segurança 29/10/2026 (S-13): o formulário desse login era escondido
+// com __DEV__, mas o array (com admin / 1234) e a função que aceita essas
+// senhas iam inteiros para o APK de produção. Com `__DEV__ ? [...] : []` o
+// bundler de release elimina as strings, e login() não faz nada fora de dev.
+const STATIC_USERS: { email: string; password: string; user: AppUser }[] = __DEV__ ? [
   {
     email: 'admin@reservago.com',
     password: '1234',
@@ -77,7 +82,7 @@ const STATIC_USERS: { email: string; password: string; user: AppUser }[] = [
       memberSince: null,
     },
   },
-];
+] : [];
 
 interface AuthContextData {
   user: AppUser | null;
@@ -102,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Não cria nada aqui: a trigger handle_new_user (schema.sql) já garante
   // que o profile existe assim que o usuário é criado em auth.users.
   const loadProfileForSession = async (activeSession: Session) => {
-    console.log('[auth] carregando profile para usuário', activeSession.user.id);
+    console.log('[auth] carregando profile da sessão atual');
     // email e phone não são mais legíveis por SELECT na tabela (migração 007);
     // o próprio usuário recebe o perfil completo pela função get_my_profile().
     let { data: profile, error } = await supabase.rpc('get_my_profile').single<DbProfile>();
@@ -161,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       phone: profile.phone ?? null,
       memberSince: profile.created_at ?? null,
     });
-    console.log('[auth] user definido no estado a partir do profile ->', profile.email, profile.role);
+    console.log('[auth] user definido no estado a partir do profile | role =', profile.role);
   };
 
   useEffect(() => {
@@ -220,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
+    if (!__DEV__) return; // login fixo só existe em desenvolvimento (S-13)
     setLoading(true);
     const found = STATIC_USERS.find(
       (u) => u.email === email.trim().toLowerCase() && u.password === password

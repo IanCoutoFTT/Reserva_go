@@ -19,7 +19,7 @@ jest.mock('expo-file-system', () => ({
 }));
 
 import { supabase } from '../../lib/supabase';
-import { approveProperty, deleteProperty, getPropertiesByHost, getPropertiesByIds, getPropertyById, getProperties, setFeatured, uploadPropertyImage } from '../propertyService';
+import { approveProperty, deleteProperty, getPropertiesByHost, getPropertiesByIds, getPropertyById, getProperties, sanitizeSearchTerm, setFeatured, uploadPropertyImage } from '../propertyService';
 
 /** Builder encadeável e "thenable" - cobre tanto `await query.eq(...)` quanto `await query.select().single()`. */
 function makeBuilder(result: { data: any; error: any }): any {
@@ -153,7 +153,7 @@ describe('propertyService.uploadPropertyImage', () => {
     expect(mockUpload).toHaveBeenCalledWith(
       expect.stringContaining('user-1/'),
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/jpg' })
+      expect.objectContaining({ contentType: 'image/jpeg' })
     );
     expect(result).toEqual({ data: 'https://cdn/x.jpg', error: null });
   });
@@ -211,5 +211,39 @@ describe('propertyService.deleteProperty', () => {
 
     expect(working.update).toHaveBeenCalledWith({ status: 'inativo' });
     expect(result.error).toBeNull();
+  });
+});
+
+// Teste de segurança 29/10/2026 (S-15): texto da busca não pode alterar a
+// estrutura do filtro .or(...) do PostgREST.
+describe('propertyService.sanitizeSearchTerm', () => {
+  it('remove vírgula, parênteses, ponto e curingas', () => {
+    expect(sanitizeSearchTerm('x%,status.eq.pendente,(id.neq.0)')).toBe('x status eq pendente id neq 0');
+    expect(sanitizeSearchTerm('a*b"c\'d\\e:f')).toBe('a b c d e f');
+  });
+
+  it('mantém texto normal e acentos, e limita a 60 caracteres', () => {
+    expect(sanitizeSearchTerm('  Chapada dos Veadeiros  ')).toBe('Chapada dos Veadeiros');
+    expect(sanitizeSearchTerm('São Jorge')).toBe('São Jorge');
+    expect(sanitizeSearchTerm('a'.repeat(200))).toHaveLength(60);
+    expect(sanitizeSearchTerm(undefined)).toBe('');
+  });
+
+  it('getProperties usa o termo limpo dentro do .or()', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+
+    await getProperties({ search: 'x,status.eq.pendente' });
+
+    expect(builder.or).toHaveBeenCalledWith('title.ilike.%x status eq pendente%,location.ilike.%x status eq pendente%');
+  });
+
+  it('busca só com caracteres de sintaxe não aplica filtro nenhum', async () => {
+    const builder = makeBuilder({ data: [], error: null });
+    mockFrom.mockReturnValue(builder);
+
+    await getProperties({ search: ',.()' });
+
+    expect(builder.or).not.toHaveBeenCalled();
   });
 });

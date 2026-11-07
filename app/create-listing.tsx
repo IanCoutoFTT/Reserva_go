@@ -178,6 +178,17 @@ export default function CreateListingScreen() {
       return;
     }
 
+    // S-04 (teste de segurança 29/10/2026): o banco só aceita anúncio e foto
+    // de cabana de quem tem perfil de anfitrião. Avisa antes de tentar.
+    if (!isEditMode && user.role !== 'anfitriao' && user.role !== 'admin') {
+      Alert.alert(
+        'Ative o perfil de anfitrião',
+        'Para publicar uma cabana, primeiro ative o perfil de anfitrião na aba Perfil.',
+        [{ text: 'Ir para o Perfil', onPress: () => router.replace('/(tabs)/profile') }, { text: 'Cancelar', style: 'cancel' }]
+      );
+      return;
+    }
+
     setSaving(true);
 
     // Só sobe uma imagem nova se o usuário trocou a foto - expo-image-picker
@@ -222,7 +233,7 @@ export default function CreateListingScreen() {
       };
       if (pickedNewImage && imageUrl) dados.images = [imageUrl];
 
-      const { error } = await updateProperty(editId, dados);
+      const { data: updated, error } = await updateProperty(editId, dados);
       setSaving(false);
 
       if (error) {
@@ -230,7 +241,15 @@ export default function CreateListingScreen() {
         return;
       }
 
-      Alert.alert('Anúncio atualizado! 🌿', 'As alterações já estão visíveis.', [
+      // T-03 (3º teste de segurança): mudar título, descrição, local, fotos ou
+      // comodidades de uma cabana aprovada a devolve para análise do admin.
+      const backToReview = updated?.status === 'pendente';
+      Alert.alert(
+        backToReview ? 'Alterações enviadas para análise 🌿' : 'Anúncio atualizado! 🌿',
+        backToReview
+          ? 'Como você mudou o texto ou as fotos, a cabana sai do explorar até um administrador aprovar de novo.'
+          : 'As alterações já estão visíveis.',
+        [
         { text: 'Ver minhas cabanas', onPress: () => router.replace('/my-cabins') },
       ]);
       return;

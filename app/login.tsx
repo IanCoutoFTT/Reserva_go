@@ -71,25 +71,23 @@ export default function LoginScreen() {
         },
       });
 
-      console.log('[login] resposta signInWithOAuth ->', {
-        url: data?.url ?? null,
-        error: error?.message ?? null,
-      });
+      // S-14: a URL de autorização e a de retorno (com o código) não vão para o log.
+      console.log('[login] resposta signInWithOAuth | url gerada?', !!data?.url, '| erro =', error?.message ?? null);
 
       if (error) throw error;
 
       if (Platform.OS !== 'web' && data?.url) {
-        console.log('[login] abrindo sessão de autenticação (WebBrowser) em', data.url);
+        console.log('[login] abrindo sessão de autenticação (WebBrowser)');
 
         // (Teste de isolamento com openBrowserAsync feito e revertido — ele
         // não intercepta o retorno do deep link por design, então não serve
         // pra fechar o fluxo de OAuth. Confirmou que a falha é no redirect de
         // volta para exp://.../--/oauth-callback, não na abertura da página.)
         const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-        console.log('[login] openAuthSessionAsync retornou (completo) ->', JSON.stringify(result));
+        console.log('[login] openAuthSessionAsync retornou | type =', result.type);
 
         if (result.type === 'success') {
-          console.log('[login] [SUCCESS] url de retorno recebida ->', result.url);
+          console.log('[login] [SUCCESS] url de retorno recebida');
 
           // Troca o código por sessão aqui mesmo, em vez de depender de
           // app/oauth-callback.tsx (useURL()) pegar essa URL depois: no Android,
@@ -109,7 +107,7 @@ export default function LoginScreen() {
           const codeMatch = result.url.match(/[?&]code=([^&]+)/);
           const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
           if (!code) {
-            console.log('[login] não achei "code=" na URL de retorno ->', result.url);
+            console.log('[login] não achei "code=" na URL de retorno');
             Alert.alert('Erro ao entrar com Google', 'Não foi possível ler o código de autorização retornado.');
             return;
           }

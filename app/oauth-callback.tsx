@@ -23,7 +23,7 @@ export default function OAuthCallback() {
   }, []);
 
   useEffect(() => {
-    console.log('[oauth-callback] url atual (useURL) ->', url);
+    console.log('[oauth-callback] url atual presente?', !!url); // S-14: sem o código no log
 
     // Um código PKCE só pode ser trocado uma vez — evita reprocessar se este
     // efeito rodar de novo com a mesma URL.
@@ -37,7 +37,7 @@ export default function OAuthCallback() {
       const codeMatch = url.match(/[?&]code=([^&]+)/);
       const code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
       if (!code) {
-        console.log('[oauth-callback] não achei "code=" na URL ->', url);
+        console.log('[oauth-callback] não achei "code=" na URL');
         setErrorMessage('Não foi possível ler o código de autorização retornado.');
         return;
       }

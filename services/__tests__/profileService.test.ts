@@ -26,7 +26,7 @@ jest.mock('expo-file-system', () => ({
 }));
 
 import { supabase } from '../../lib/supabase';
-import { getMyProfile, getProfile, getProfilesByIds, updateProfile, updateRole, uploadAvatar } from '../profileService';
+import { deleteAccount, getMyProfile, getProfile, getProfilesByIds, updateProfile, updateRole, uploadAvatar } from '../profileService';
 
 const mockRpc = supabase.rpc as jest.Mock;
 const mockFrom = supabase.from as jest.Mock;
@@ -88,7 +88,7 @@ describe('profileService.uploadAvatar', () => {
     expect(mockUpload).toHaveBeenCalledWith(
       expect.stringContaining('user-1/'),
       expect.any(ArrayBuffer),
-      expect.objectContaining({ contentType: 'image/jpg' })
+      expect.objectContaining({ contentType: 'image/jpeg' })
     );
     expect(result).toEqual({ data: 'https://cdn/avatar.jpg', error: null });
   });
@@ -211,5 +211,28 @@ describe('profileService.updateProfile', () => {
     const result = await updateProfile('u1', { bio: 'x' });
 
     expect(result).toEqual({ data: null, error: 'sem permissão' });
+  });
+});
+
+// Teste de segurança 29/10/2026 (S-08): o UPDATE direto em deleted_at sempre
+// era recusado pela RLS - excluir conta tem que ir pela função do banco.
+describe('profileService.deleteAccount', () => {
+  it('chama o RPC delete_my_account e nunca faz UPDATE direto em profiles', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    const result = await deleteAccount('user-1');
+
+    expect(mockRpc).toHaveBeenCalledWith('delete_my_account');
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(result).toEqual({ data: { id: 'user-1' }, error: null });
+  });
+
+  it('repassa o erro do banco', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'É preciso estar logado para excluir a conta.' } });
+
+    const result = await deleteAccount('user-1');
+
+    expect(result.data).toBeNull();
+    expect(result.error).toMatch(/logado/);
   });
 });

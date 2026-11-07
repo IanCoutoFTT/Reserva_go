@@ -27,6 +27,11 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ── 1. Anfitriões fictícios ─────────────────────────────────
+-- Segurança (S-11, testes de 29/10/2026): antes todas tinham a senha
+-- 'Seed123!' publicada aqui no GitHub - se este seed fosse aplicado com o
+-- login por e-mail ligado, qualquer pessoa entraria como esses anfitriões.
+-- Agora cada conta recebe uma senha aleatória que é descartada na hora:
+-- ninguém consegue fazer login nelas (servem só de "dono" das cabanas).
 -- UUIDs fixos e legíveis só pra facilitar reler este arquivo depois.
 INSERT INTO auth.users (
   instance_id, id, aud, role, email, encrypted_password,
@@ -36,17 +41,17 @@ INSERT INTO auth.users (
 ) VALUES
   ('00000000-0000-0000-0000-000000000000', 'a1000000-0000-0000-0000-000000000001',
    'authenticated', 'authenticated', 'maria.anfitria.seed@reservago.com',
-   crypt('Seed123!', gen_salt('bf')), NOW(), NOW(), NOW(),
+   crypt(encode(gen_random_bytes(32), 'hex'), gen_salt('bf')), NOW(), NOW(), NOW(),
    '{"provider":"email","providers":["email"]}', '{"full_name":"Maria Andrade"}',
    FALSE, '', ''),
   ('00000000-0000-0000-0000-000000000000', 'a1000000-0000-0000-0000-000000000002',
    'authenticated', 'authenticated', 'joao.anfitriao.seed@reservago.com',
-   crypt('Seed123!', gen_salt('bf')), NOW(), NOW(), NOW(),
+   crypt(encode(gen_random_bytes(32), 'hex'), gen_salt('bf')), NOW(), NOW(), NOW(),
    '{"provider":"email","providers":["email"]}', '{"full_name":"João Ferreira"}',
    FALSE, '', ''),
   ('00000000-0000-0000-0000-000000000000', 'a1000000-0000-0000-0000-000000000003',
    'authenticated', 'authenticated', 'clara.anfitria.seed@reservago.com',
-   crypt('Seed123!', gen_salt('bf')), NOW(), NOW(), NOW(),
+   crypt(encode(gen_random_bytes(32), 'hex'), gen_salt('bf')), NOW(), NOW(), NOW(),
    '{"provider":"email","providers":["email"]}', '{"full_name":"Clara Nogueira"}',
    FALSE, '', '')
 ON CONFLICT (id) DO NOTHING;

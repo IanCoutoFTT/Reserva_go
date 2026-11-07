@@ -27,3 +27,11 @@ export function effectiveStatus(
   if (booking.status === 'realizada') return 'realizada';
   return stayEnded(booking.check_out, now) ? 'realizada' : 'reservada';
 }
+
+/**
+ * O hóspede só pode cancelar até o dia do check-in (o banco recusa depois -
+ * migração 009, achado T-05 do 3º teste de segurança).
+ */
+export function canCancelStay(checkIn: string, now: Date = new Date()): boolean {
+  return checkIn >= todayISO(now);
+}
