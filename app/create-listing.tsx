@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useListings } from '../context/ListingContext';
-import { parsePriceBR } from '../lib/format';
+import { LISTING_LIMITS, validateListing } from '../lib/listingValidation';
 import { createProperty, updateProperty, uploadPropertyImage, UpdatableProperty } from '../services/propertyService';
 import type { IsolationLevel } from '../services/types';
 
@@ -134,21 +134,13 @@ export default function CreateListingScreen() {
   };
 
   const handleSave = async () => {
-    if (!title.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe o título do anúncio.');
+    // Título, localização, valor e descrição (regras em lib/listingValidation.ts).
+    const validation = validateListing({ title, location, price, description });
+    if (!validation.ok) {
+      Alert.alert(validation.title, validation.message);
       return;
     }
-    if (!location.trim()) {
-      Alert.alert('Campo obrigatório', 'Informe a localização (cidade e estado).');
-      return;
-    }
-    // "1.200", "450,50" e "R$ 1.200,50" são lidos do jeito brasileiro (parseFloat
-    // lia "1.200" como 1,2 e "450,50" como 450 - e valor vazio virava R$ 0).
-    const priceValue = parsePriceBR(price);
-    if (priceValue === null || priceValue <= 0) {
-      Alert.alert('Valor inválido', 'Informe o valor por noite, por exemplo 450 ou 450,50.');
-      return;
-    }
+    const priceValue = validation.price;
     if (!category) {
       Alert.alert('Campo obrigatório', 'Selecione uma categoria.');
       return;
@@ -322,7 +314,7 @@ export default function CreateListingScreen() {
           <Text style={styles.label}>Título do Anúncio</Text>
           <View style={styles.inputWrapper}>
             <Home size={20} color="#9CA3AF" style={styles.inputIcon} />
-            <TextInput style={styles.input} placeholder="Ex: Refúgio das Araucárias" value={title} onChangeText={setTitle} />
+            <TextInput style={styles.input} placeholder="Ex: Refúgio das Araucárias" value={title} onChangeText={setTitle} maxLength={LISTING_LIMITS.titleMax} />
           </View>
         </View>
 
@@ -331,7 +323,7 @@ export default function CreateListingScreen() {
           <Text style={styles.label}>Localização</Text>
           <View style={styles.inputWrapper}>
             <MapPin size={20} color="#9CA3AF" style={styles.inputIcon} />
-            <TextInput style={styles.input} placeholder="Cidade e Estado" value={location} onChangeText={setLocation} />
+            <TextInput style={styles.input} placeholder="Cidade e Estado" value={location} onChangeText={setLocation} maxLength={LISTING_LIMITS.locationMax} />
           </View>
         </View>
 
@@ -353,7 +345,7 @@ export default function CreateListingScreen() {
               style={[styles.input, styles.textArea]}
               placeholder="Fale um pouco sobre o que torna sua cabana especial..."
               multiline numberOfLines={5} textAlignVertical="top"
-              value={description} onChangeText={setDescription}
+              value={description} onChangeText={setDescription} maxLength={LISTING_LIMITS.descriptionMax}
             />
           </View>
         </View>

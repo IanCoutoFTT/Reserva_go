@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, StyleSheet, Text, View, FlatList, Image,
   TouchableOpacity, Modal, TextInput, KeyboardAvoidingView,
@@ -7,6 +8,7 @@ import {
 } from 'react-native';
 import { Mail, ChevronRight, Send, X, ShieldCheck, Plus, MessageCircle } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useOnAppActive } from '../../lib/useOnAppActive';
 import { useNotifications } from '../../context/NotificationContext';
 import { getBookingsByGuest } from '../../services/bookingService';
 import {
@@ -256,6 +258,43 @@ export default function MessagesScreen() {
       }
     );
   };
+
+  // O Realtime não reentrega o que chegou com o app em segundo plano (o Android
+  // derruba a conexão com a tela apagada). Sem isso a lista ficava com a prévia
+  // antiga e a conversa aberta sem a mensagem nova até reiniciar o app.
+  const loadConversationsRef = useRef(loadConversations);
+  loadConversationsRef.current = loadConversations;
+  const activeChatRef = useRef<Chat | null>(null);
+  activeChatRef.current = activeChat;
+
+  const resyncMessages = useCallback(() => {
+    if (!user?.id) return;
+    loadConversationsRef.current();
+
+    const open = activeChatRef.current;
+    if (!open || !open.isReal) return;
+    getMessages(open.id).then(({ data, error }) => {
+      if (error || !data) return;
+      const mapped = data.map((m) => mapMessage(m, user.id));
+      setActiveChat((prev) => (prev && prev.id === open.id ? { ...prev, messages: mapped } : prev));
+      const unreadIncoming = data.filter((m) => m.sender_id !== user.id && !m.read_at).map((m) => m.id);
+      if (unreadIncoming.length > 0) {
+        markMessagesRead(unreadIncoming);
+        markMessageNotificationsAsRead(unreadIncoming);
+        refreshNotifications();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useOnAppActive(resyncMessages, isConnected);
+
+  // Tocar na aba Mensagens também atualiza (as abas ficam montadas o tempo todo).
+  useFocusEffect(
+    useCallback(() => {
+      if (hasLoadedConversationsRef.current) loadConversationsRef.current();
+    }, [])
+  );
 
   useEffect(() => {
     loadConversations();

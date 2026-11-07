@@ -1,4 +1,4 @@
-import { canCancelStay, effectiveStatus, stayEnded, todayISO } from '../booking';
+import { canCancelStay, effectiveStatus, stayEnded, todayISO, bookingTabOf } from '../booking';
 
 const agora = new Date(2026, 9, 22, 15, 30); // 22/10/2026 15:30, horário local
 
@@ -49,5 +49,17 @@ describe('canCancelStay (T-05, 3º teste de segurança)', () => {
   });
   it('não permite depois que a estadia começou', () => {
     expect(canCancelStay('2026-10-28', now)).toBe(false);
+  });
+});
+
+describe('bookingTabOf', () => {
+  it('cancelada vai para a aba Canceladas', () => {
+    expect(bookingTabOf('cancelada')).toBe('canceladas');
+  });
+
+  it('reservada, realizada e qualquer outro status ficam em Confirmadas', () => {
+    expect(bookingTabOf('reservada')).toBe('confirmadas');
+    expect(bookingTabOf('realizada')).toBe('confirmadas');
+    expect(bookingTabOf('algo-inesperado')).toBe('confirmadas');
   });
 });

@@ -8,7 +8,7 @@ import { useRouter } from 'expo-router';
 import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../services/bookingService';
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
-import { canCancelStay, stayEnded } from '../../lib/booking';
+import { BookingTab, bookingTabOf, canCancelStay, stayEnded } from '../../lib/booking';
 import { PropertyImage } from '../../components/PropertyImage';
 
 // Linha unificada de exibição - pode vir de uma reserva real (Supabase,
@@ -48,6 +48,8 @@ export default function BookingsScreen() {
   const isStaticUser = !!user?.id && user.id.startsWith('static-');
   const [remoteBookings, setRemoteBookings] = useState<BookingWithProperty[] | null>(null);
   const [loading, setLoading] = useState(!isStaticUser);
+  // Abre sempre em "Confirmadas": as canceladas só aparecem se a pessoa quiser ver.
+  const [tab, setTab] = useState<BookingTab>('confirmadas');
 
   const loadRemote = () => {
     if (isStaticUser || !user?.id) {
@@ -115,6 +117,15 @@ export default function BookingsScreen() {
 
     return [...remoteRows, ...localRows];
   }, [remoteBookings, localBookings, allProperties]);
+
+  const counts = useMemo(
+    () => ({
+      confirmadas: rows.filter((r) => bookingTabOf(r.status) === 'confirmadas').length,
+      canceladas: rows.filter((r) => bookingTabOf(r.status) === 'canceladas').length,
+    }),
+    [rows]
+  );
+  const visibleRows = useMemo(() => rows.filter((r) => bookingTabOf(r.status) === tab), [rows, tab]);
 
   const handleCancel = (row: BookingRow) => {
     Alert.alert(
@@ -228,13 +239,42 @@ export default function BookingsScreen() {
           <ActivityIndicator size="large" color="#2D5A27" />
         </View>
       ) : rows.length > 0 ? (
-        <FlatList
-          data={rows}
-          keyExtractor={(item) => item.key}
-          renderItem={renderBookingItem}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-        />
+        <>
+          <View style={styles.tabs}>
+            {(['confirmadas', 'canceladas'] as BookingTab[]).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
+                onPress={() => setTab(t)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === t }}
+              >
+                <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+                  {t === 'confirmadas' ? 'Confirmadas' : 'Canceladas'} ({counts[t]})
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <FlatList
+            data={visibleRows}
+            keyExtractor={(item) => item.key}
+            renderItem={renderBookingItem}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.tabEmpty}>
+                <Text style={styles.emptyTitle}>
+                  {tab === 'confirmadas' ? 'Nenhuma reserva confirmada' : 'Nenhuma reserva cancelada'}
+                </Text>
+                <Text style={styles.emptySub}>
+                  {tab === 'confirmadas'
+                    ? 'Quando você reservar uma cabana, ela aparece aqui.'
+                    : 'Reservas que você cancelar aparecem aqui.'}
+                </Text>
+              </View>
+            }
+          />
+        </>
       ) : (
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconCircle}>
@@ -255,6 +295,12 @@ const styles = StyleSheet.create({
   header: { paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   title: { fontSize: 26, fontWeight: 'bold', color: '#1F2937' },
   list: { padding: 20, paddingBottom: 100 },
+  tabs: { flexDirection: 'row', marginHorizontal: 20, marginTop: 14, padding: 4, backgroundColor: '#F3F4F6', borderRadius: 12 },
+  tabBtn: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center' },
+  tabBtnActive: { backgroundColor: '#fff', elevation: 1, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 3 },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  tabTextActive: { color: '#2D5A27' },
+  tabEmpty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 30 },
   card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F3F4F6', overflow: 'hidden', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
   cardImage: { width: 100, height: '100%', minHeight: 130 },
   cardInfo: { padding: 12, flex: 1, justifyContent: 'center' },
