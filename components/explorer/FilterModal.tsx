@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PRICE_RANGES, ISOLATION_OPTIONS, PriceRange, IsolationOption } from './exploreConstants';
 
 export type FilterModalProps = {
@@ -18,6 +19,8 @@ export function FilterModal({
   visible, onClose, tempPriceRange, onChangePriceRange,
   tempIsolation, onChangeIsolation, onClear, onApply,
 }: FilterModalProps) {
+  // Os botões Limpar/Aplicar não podem ficar atrás da barra de navegação do Android.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
@@ -62,7 +65,7 @@ export function FilterModal({
               ))}
             </View>
           </ScrollView>
-          <View style={styles.modalFooter}>
+          <View style={[styles.modalFooter, { paddingBottom: 16 + insets.bottom }]}>
             <TouchableOpacity style={styles.clearBtn} onPress={onClear}>
               <Text style={styles.clearBtnText}>Limpar filtros</Text>
             </TouchableOpacity>

@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AlignLeft, Camera, ChevronLeft, DollarSign, Home, MapPin } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -66,6 +67,8 @@ const ISOLATION_LEVELS = [
 
 export default function CreateListingScreen() {
   const router = useRouter();
+  // Espaço real da barra de navegação do Android (3 botões ou gestos) embaixo do botão Publicar.
+  const insets = useSafeAreaInsets();
   const { addListing, updateListing } = useListings();
   const { user } = useAuth();
   const params = useLocalSearchParams();
@@ -449,7 +452,7 @@ export default function CreateListingScreen() {
 
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
         <TouchableOpacity
           style={[styles.saveButton, saving && { opacity: 0.6 }]}
           onPress={handleSave}

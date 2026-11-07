@@ -3,9 +3,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, StyleSheet, Text, View, FlatList, Image,
-  TouchableOpacity, Modal, TextInput, KeyboardAvoidingView,
+  TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Keyboard,
   Platform, ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Mail, ChevronRight, Send, X, ShieldCheck, Plus, MessageCircle } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useOnAppActive } from '../../lib/useOnAppActive';
@@ -176,6 +177,22 @@ export default function MessagesScreen() {
   const isSupportAgent = user?.role === 'admin';
 
   const router = useRouter();
+
+  // A barra de digitar não pode ficar atrás da barra de navegação do Android. Em
+  // celular com 3 botões (voltar/início/recentes) essa barra é bem mais alta que a
+  // de gestos, então o espaço vem do que o aparelho informa (insets.bottom) e não de
+  // um número fixo. Com o teclado aberto a barra de navegação some, e o espaço extra também.
+  const insets = useSafeAreaInsets();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   // Conversas de exemplo (INITIAL_CHATS) só pro login estático de teste visual.
   // Visitante vê um convite de login e usuário real vê só dados reais (ou um
   // erro com "tentar de novo") - antes todo mundo via "Carlos"/"Ana" falsos.
@@ -654,7 +671,7 @@ export default function MessagesScreen() {
             ))}
           </ScrollView>
 
-          <View style={styles.inputBar}>
+          <View style={[styles.inputBar, { paddingBottom: keyboardOpen ? 12 : insets.bottom + 12 }]}>
             <TextInput
               style={styles.messageInput}
               placeholder="Digite uma mensagem..."
