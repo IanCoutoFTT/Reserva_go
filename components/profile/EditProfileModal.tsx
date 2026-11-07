@@ -4,6 +4,7 @@ import {
   Modal, ScrollView, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { X, Camera, Check } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ALL_INTERESTS } from './profileContent';
 
 export type EditProfileModalProps = {
@@ -26,6 +27,8 @@ export function EditProfileModal({
   visible, onClose, avatar, onPickImage, name, onChangeName,
   bio, onChangeBio, interests, onToggleInterest, onSave, saving = false,
 }: EditProfileModalProps) {
+  // O botão Salvar Alterações não pode ficar atrás da barra de navegação do Android.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
@@ -39,7 +42,7 @@ export function EditProfileModal({
               <X size={24} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 20 + insets.bottom }}>
             <View style={styles.editAvatarContainer}>
               <Image source={{ uri: avatar }} style={styles.editAvatarImage} />
               <TouchableOpacity style={styles.editAvatarBtn} onPress={onPickImage}>

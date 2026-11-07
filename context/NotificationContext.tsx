@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
+import { useOnAppActive } from '../lib/useOnAppActive';
 import { useAuth } from './AuthContext';
 import {
   getNotifications,
@@ -198,6 +199,28 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       unsubscribe();
     };
   }, [isConnected, user?.id, refreshUnreadCount]);
+
+  // O Realtime não reentrega o que chegou enquanto o app estava em segundo plano
+  // (a conexão cai com a tela apagada): ao voltar, busca a lista e o contador de novo.
+  const userIdRef = useRef<string | undefined>(undefined);
+  userIdRef.current = user?.id;
+
+  const resync = useCallback(() => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    getNotifications(userId).then(({ data, error }) => {
+      if (userIdRef.current !== userId) return; // trocou de conta no meio
+      if (error || !data) {
+        console.log('[notifications] ressincronização falhou ->', error);
+        return;
+      }
+      setLoadError(false);
+      setNotifications(data.map(mapNotification));
+    });
+    refreshUnreadCount(userId);
+  }, [refreshUnreadCount]);
+
+  useOnAppActive(resync, isConnected);
 
   const unreadCount = isConnected && remoteUnreadCount !== null
     ? remoteUnreadCount

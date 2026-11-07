@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { CalendarDays, ChevronLeft, Edit, MapPin, Plus, Trash2, TrendingUp } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { Listing, useListings } from '../context/ListingContext';
 import { PropertyImage } from '../components/PropertyImage';
@@ -54,6 +55,8 @@ const BOOKING_STATUS_LABELS = {
 
 export default function MyCabinsScreen() {
   const router = useRouter();
+  // O botão flutuante "Novo Anúncio" não pode ficar atrás da barra de navegação do Android.
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { listings: localListings, removeListing } = useListings();
 
@@ -306,7 +309,7 @@ export default function MyCabinsScreen() {
       </ScrollView>
 
       <TouchableOpacity 
-        style={styles.fab} 
+        style={[styles.fab, { bottom: 16 + insets.bottom }]}
         activeOpacity={0.8}
         onPress={() => router.push('/create-listing')}
       >

@@ -35,3 +35,14 @@ export function effectiveStatus(
 export function canCancelStay(checkIn: string, now: Date = new Date()): boolean {
   return checkIn >= todayISO(now);
 }
+
+export type BookingTab = 'confirmadas' | 'canceladas';
+
+/**
+ * Minhas Viagens separa as reservas em duas abas: quem não quer ver canceladas
+ * sem necessidade fica só na primeira. "Canceladas" reúne apenas o status
+ * cancelada; todo o resto (reservada, em andamento, já realizada) é "Confirmadas".
+ */
+export function bookingTabOf(status: string): BookingTab {
+  return status === 'cancelada' ? 'canceladas' : 'confirmadas';
+}

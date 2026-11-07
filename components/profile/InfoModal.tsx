@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { InfoSection } from './profileContent';
 
 export type InfoModalProps = {
@@ -13,6 +14,8 @@ export type InfoModalProps = {
 };
 
 export function InfoModal({ visible, onClose, title, subtitle, sections, footerText }: InfoModalProps) {
+  // O fim do texto não pode ficar atrás da barra de navegação do Android.
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
@@ -26,7 +29,7 @@ export function InfoModal({ visible, onClose, title, subtitle, sections, footerT
               <X size={24} color="#6B7280" />
             </TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 20 + insets.bottom }}>
             {sections.map((section, index) => {
               const Icon = section.icon;
               return (
