@@ -70,6 +70,8 @@ function RootLayoutNav() {
         <Stack.Screen name="notifications" options={{ headerShown: false }} />
         <Stack.Screen name="oauth-callback" options={{ headerShown: false }} />
         <Stack.Screen name="review" options={{ headerShown: false }} />
+        <Stack.Screen name="pix-payment" options={{ headerShown: false }} />
+        <Stack.Screen name="payout-settings" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );

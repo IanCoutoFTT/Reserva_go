@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import {
   User, Settings, Bell, ShieldCheck, LogOut,
-  LogIn, LayoutDashboard, Home, FileText, Trash2,
+  LogIn, LayoutDashboard, Home, FileText, Trash2, Wallet,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,7 @@ import { PRIVACY_SECTIONS, TERMS_SECTIONS } from '../../components/profile/profi
 import { updateProfile, uploadAvatar } from '../../services/profileService';
 import { getBookingsByGuest } from '../../services/bookingService';
 import { effectiveStatus } from '../../lib/booking';
+import { PIX_ENABLED } from '../../lib/pix';
 import { getReviewCountByAuthor } from '../../services/reviewService';
 
 const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=11';
@@ -246,6 +247,14 @@ export default function ProfileScreen() {
               subtitle="Ver reservas e editar anúncios"
               onPress={() => router.push('../my-cabins')}
             />
+            {PIX_ENABLED && (
+              <MenuItem
+                icon={Wallet}
+                title="Dados para receber"
+                subtitle="Nome, CPF e chave Pix para os repasses"
+                onPress={() => router.push('../payout-settings')}
+              />
+            )}
           </View>
         )}
 
