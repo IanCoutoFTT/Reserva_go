@@ -130,7 +130,7 @@ Reserva_go/
 ├── constants/                # Cores
 ├── supabase/
 │   ├── schema.sql            # Esquema base do banco
-│   ├── migrations/           # 001 a 007, aplicadas em ordem
+│   ├── migrations/           # 001 a 013, aplicadas em ordem
 │   └── seed.sql              # Dados de exemplo opcionais (ver observação abaixo)
 ├── docs/                     # Material de apoio ao TCC
 ├── .github/workflows/ci.yml  # Integração contínua
@@ -164,7 +164,7 @@ npm install
 
 1. Crie um projeto no Supabase.
 2. No **SQL Editor**, rode o conteúdo de `supabase/schema.sql`.
-3. Ainda no SQL Editor, rode **uma de cada vez, em ordem**, as migrações de `supabase/migrations/`, de `001` até `007`. Elas são idempotentes, então rodar de novo não causa problema.
+3. Ainda no SQL Editor, rode **uma de cada vez, em ordem**, as migrações de `supabase/migrations/`, de `001` até `013` (a 013, do Pix, é opcional e só vale com o pagamento ligado: veja `docs/pagamento-pix.md`). Elas são idempotentes, então rodar de novo não causa problema.
 4. Em **Authentication → Providers**, ative o **Google** e informe o Client ID e o Client Secret do Google Cloud.
 5. Em **Authentication → URL Configuration → Redirect URLs**, adicione `reservago://oauth-callback`.
 6. Em **Project Settings → API**, copie a URL do projeto e a chave `anon`.

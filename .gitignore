@@ -46,3 +46,6 @@ supabase-google.txt
 # sistema
 .DS_Store
 Thumbs.db
+
+# CLI do Supabase (cache local, nao vai para o repositorio)
+supabase/.temp/
