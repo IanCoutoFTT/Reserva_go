@@ -109,14 +109,23 @@ export type NewBooking = Pick<
  * partir do histórico de reservas do hóspede, sem precisar de uma query
  * separada por reserva.
  */
+/**
+ * Situação do Pix embutida na reserva (só vem com o pagamento ligado,
+ * EXPO_PUBLIC_PIX_ENABLED). Objeto ou lista, conforme a relação que o
+ * PostgREST enxerga: use paymentStatusOf (lib/pix.ts) para ler.
+ */
+export type PaymentEmbed = { status: string; expires_at?: string } | { status: string; expires_at?: string }[] | null;
+
 export interface BookingWithProperty extends Booking {
   properties: { title: string; location: string; images: string[]; owner_id: string } | null;
+  payments?: PaymentEmbed;
 }
 
 /** Reserva vista pelo anfitrião: cabana (título, local) e hóspede (nome, avatar) embutidos. */
 export interface BookingForHost extends Booking {
   properties: { title: string; location: string; owner_id: string } | null;
   guest: { name: string; avatar_url: string | null } | null;
+  payments?: PaymentEmbed;
 }
 
 // ── favorites ────────────────────────────────────────────────────────

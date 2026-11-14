@@ -1,3 +1,4 @@
+import { PIX_ENABLED } from '../lib/pix';
 import { supabase } from '../lib/supabase';
 import { Booking, BookingForHost, BookingWithProperty, NewBooking, ServiceResult, toResult } from './types';
 
@@ -35,7 +36,8 @@ export async function getBookingsByGuest(guestId: string): Promise<ServiceResult
   // do histórico real de reservas, sem query extra por reserva.
   const { data, error } = await supabase
     .from('bookings')
-    .select('*, properties(title, location, images, owner_id)')
+    // payments só entra com o pagamento ligado: sem a migração 013 a relação não existe.
+    .select(PIX_ENABLED ? '*, properties(title, location, images, owner_id), payments(status, expires_at)' : '*, properties(title, location, images, owner_id)')
     .eq('guest_id', guestId)
     .order('check_in', { ascending: false });
   return toResult(data as unknown as BookingWithProperty[] | null, error);
@@ -49,7 +51,11 @@ export async function getBookingsByHost(hostId: string): Promise<ServiceResult<B
   // para o anfitrião saber quem reservou).
   const { data, error } = await supabase
     .from('bookings')
-    .select('*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url)')
+    .select(
+      PIX_ENABLED
+        ? '*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url), payments(status)'
+        : '*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url)'
+    )
     .eq('properties.owner_id', hostId)
     .order('check_in', { ascending: false });
   return toResult(data as unknown as BookingForHost[] | null, error);
