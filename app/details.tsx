@@ -24,11 +24,12 @@ import {
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PropertyImage } from '../components/PropertyImage';
+import { ImageGallery } from '../components/ImageGallery';
 import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { formatCurrency } from '../lib/format';
+import { PIX_ENABLED } from '../lib/pix';
 import { checkAvailability, createBooking } from '../services/bookingService';
 import { getOrCreateConversation } from '../services/messageService';
 import { getProfile } from '../services/profileService';
@@ -193,6 +194,8 @@ export default function DetailsScreen() {
   const displayLocation = property?.location ?? (location as string);
   const displayDescription = property?.description ?? (description as string);
   const displayImage = property?.images?.[0] ?? (image as string);
+  // Todas as fotos da cabana; enquanto ela não carrega, usa a capa que veio da lista.
+  const galleryImages = (property?.images?.length ? property.images : [displayImage]).filter(Boolean) as string[];
   const displayIsolationLevel = property?.isolation_level ?? (isolationLevel as string);
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -327,6 +330,14 @@ export default function DetailsScreen() {
     }
 
     setModalVisible(false);
+
+    // Pagamento ligado (EXPO_PUBLIC_PIX_ENABLED): a reserva só vale depois de
+    // pagar o Pix, dentro do prazo. Desligado, segue o fluxo de sempre.
+    if (PIX_ENABLED && payMethod === 'pix') {
+      router.replace({ pathname: '/pix-payment', params: { bookingId: booking.id } });
+      return;
+    }
+
     Alert.alert('Reserva Confirmada! 🌿', 'Sua viagem foi registrada com sucesso.', [
       { text: 'Ver viagens', onPress: () => router.replace('/(tabs)/bookings') },
     ]);
@@ -510,7 +521,7 @@ export default function DetailsScreen() {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={styles.imageHeader}>
-          <PropertyImage uri={displayImage || null} style={styles.mainImage} iconSize={64} />
+          <ImageGallery images={galleryImages} height={350} />
           <TouchableOpacity style={[styles.backButton, { top: insets.top + 10 }]} onPress={() => router.back()}>
             <ChevronLeft color="#000" size={24} />
           </TouchableOpacity>

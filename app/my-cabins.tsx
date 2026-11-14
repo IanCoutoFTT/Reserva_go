@@ -8,6 +8,7 @@ import { Listing, useListings } from '../context/ListingContext';
 import { PropertyImage } from '../components/PropertyImage';
 import { effectiveStatus } from '../lib/booking';
 import { formatCurrency } from '../lib/format';
+import { paymentStatusOf } from '../lib/pix';
 import { getBookingsByHost } from '../services/bookingService';
 import { deleteProperty, getPropertiesByHost } from '../services/propertyService';
 import type { BookingForHost, CabinStatus, Property as DbProperty } from '../services/types';
@@ -300,6 +301,8 @@ export default function MyCabinsScreen() {
                   </Text>
                   <Text style={styles.hostBookingTotal}>
                     {b.pay_method === 'pix' ? 'PIX' : 'Cartão'} · {formatCurrency(Number(b.total))}
+                    {b.pay_method === 'pix' && paymentStatusOf(b.payments) === 'pago' ? ' · Pago' : ''}
+                    {b.pay_method === 'pix' && paymentStatusOf(b.payments) === 'aguardando' ? ' · Aguardando pagamento' : ''}
                   </Text>
                 </View>
               );

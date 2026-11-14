@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../services/bookingService';
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
+import { paymentStatusOf } from '../../lib/pix';
 import { BookingTab, bookingTabOf, canCancelStay, stayEnded } from '../../lib/booking';
 import { PropertyImage } from '../../components/PropertyImage';
 
@@ -30,6 +31,8 @@ type BookingRow = {
   nights?: number;
   total?: number;
   payMethod?: string;
+  /** Situação do Pix ('aguardando', 'pago'...), só com o pagamento ligado. */
+  paymentStatus?: string | null;
 };
 
 function isoToBR(iso: string): string {
@@ -95,6 +98,7 @@ export default function BookingsScreen() {
       nights: b.nights,
       total: b.total,
       payMethod: b.pay_method,
+      paymentStatus: paymentStatusOf(b.payments),
     }));
 
     const localRows: BookingRow[] = localBookings.map((b, index) => {
@@ -168,6 +172,8 @@ export default function BookingsScreen() {
     // Estadia em andamento continua "Confirmada", mas não pode mais ser cancelada (T-05).
     const canCancel = isActive && (!item.checkInIso || canCancelStay(item.checkInIso));
     const canReview = item.isReal && item.status !== 'cancelada' && ended;
+    // Reserva Pix ainda não paga (só aparece com o pagamento ligado): o hóspede pode voltar ao QR Code.
+    const awaitingPayment = isActive && item.isReal && item.payMethod === 'pix' && item.paymentStatus === 'aguardando';
 
     return (
       <TouchableOpacity
@@ -183,9 +189,9 @@ export default function BookingsScreen() {
         <PropertyImage uri={item.propertyImage} style={styles.cardImage} iconSize={28} />
         <View style={styles.cardInfo}>
           <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, { backgroundColor: isActive ? '#2D5A27' : '#9CA3AF' }]} />
+            <View style={[styles.statusDot, { backgroundColor: awaitingPayment ? '#F59E0B' : isActive ? '#2D5A27' : '#9CA3AF' }]} />
             <Text style={styles.statusText}>
-              {item.status === 'cancelada' ? 'Cancelada' : isActive ? 'Confirmada' : 'Realizada'}
+              {item.status === 'cancelada' ? 'Cancelada' : awaitingPayment ? 'Aguardando pagamento' : isActive ? 'Confirmada' : 'Realizada'}
             </Text>
           </View>
           <Text style={styles.cardTitle} numberOfLines={1}>{item.propertyTitle}</Text>
@@ -210,6 +216,15 @@ export default function BookingsScreen() {
             </View>
           )}
           <View style={{ flexDirection: 'row', gap: 8 }}>
+            {awaitingPayment && (
+              <TouchableOpacity
+                style={styles.reviewBtn}
+                onPress={() => router.push({ pathname: '/pix-payment', params: { bookingId: item.bookingId } })}
+              >
+                <CreditCard size={12} color="#2D5A27" />
+                <Text style={styles.reviewBtnText}>Pagar agora</Text>
+              </TouchableOpacity>
+            )}
             {canCancel && (
               <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item)}>
                 <X size={12} color="#EF4444" />

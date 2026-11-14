@@ -1,9 +1,11 @@
 import { parsePriceBR } from './format';
 
-// Limites do anúncio. Os máximos espelham o que o banco já recusa (migração 008,
-// constraint properties_campos_validos): o app avisa antes, em vez de o usuário
-// receber um erro genérico do servidor. Os mínimos existem só para evitar
-// anúncios sem sentido (título "A", diária de R$ 1,00).
+// Limites do anúncio. Quem decide é o BANCO: os máximos são recusados pela
+// constraint properties_campos_validos (migração 008) e os mínimos pelo gatilho
+// properties_enforce_minimums (migração 012). Esta validação só espelha essas
+// regras para avisar o usuário antes, em vez de ele receber um erro genérico do
+// servidor; ela não é uma barreira de segurança. Ao mudar um valor aqui, mude
+// também na migração 012.
 export const LISTING_LIMITS = {
   titleMin: 3,
   titleMax: 120,
