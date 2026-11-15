@@ -26,9 +26,11 @@ export function PropertyCard({ id, title, location, price, rating, description, 
   const isFavorite = favorites.includes(id);
 
   return (
-    <TouchableOpacity 
-      style={styles.card} 
+    <TouchableOpacity
+      style={styles.card}
       activeOpacity={0.9}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}, ${location}. R$ ${price} por noite. Nota ${rating}. Toque para ver os detalhes.`}
       onPress={() => router.push({ 
         pathname: "/details", 
         params: { id, title, price, location, description, image, isolationLevel, hostId } 
@@ -42,6 +44,10 @@ export function PropertyCard({ id, title, location, price, rating, description, 
           style={styles.heartButton}
           onPress={() => toggleFavorite(id)}
           testID="favorite-button"
+          accessibilityRole="button"
+          accessibilityLabel={isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+          accessibilityState={{ selected: isFavorite }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Heart 
             size={24} 
