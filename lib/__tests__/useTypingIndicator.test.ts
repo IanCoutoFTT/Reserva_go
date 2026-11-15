@@ -3,6 +3,8 @@ import { shouldSendTyping, TYPING_THROTTLE_MS, TYPING_TTL_MS } from '../typing';
 import { useTypingIndicator } from '../useTypingIndicator';
 import * as typingService from '../../services/typingService';
 
+// o cliente real do Supabase não cria no Node 20 (sem WebSocket nativo); estes testes não precisam dele
+jest.mock('../supabase', () => ({ supabase: {} }));
 jest.mock('../../services/typingService');
 const mocked = typingService as jest.Mocked<typeof typingService>;
 

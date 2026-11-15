@@ -5,6 +5,8 @@ import { BlockDatesModal } from '../BlockDatesModal';
 import * as service from '../../services/availabilityService';
 
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+// o cliente real do Supabase não cria no Node 20 (sem WebSocket nativo); estes testes não precisam dele
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../services/availabilityService');
 
 const mocked = service as jest.Mocked<typeof service>;

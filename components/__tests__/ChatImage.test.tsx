@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { ChatImage } from '../ChatImage';
 import * as service from '../../services/chatImageService';
 
+// o cliente real do Supabase não cria no Node 20 (sem WebSocket nativo); estes testes não precisam dele
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../services/chatImageService');
 const mocked = service as jest.Mocked<typeof service>;
 

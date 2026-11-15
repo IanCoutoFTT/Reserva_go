@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { AppErrorBoundary } from '../AppErrorBoundary';
 import * as errorService from '../../services/errorService';
 
+// o cliente real do Supabase não cria no Node 20 (sem WebSocket nativo); estes testes não precisam dele
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../services/errorService');
 const mocked = errorService as jest.Mocked<typeof errorService>;
 
