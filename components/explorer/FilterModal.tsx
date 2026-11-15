@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import { X } from 'lucide-react-native';
+import { CalendarDays, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AMENITY_OPTIONS } from '../../lib/amenities';
+import { formatBR } from '../../lib/dateRange';
 import { PRICE_RANGES, ISOLATION_OPTIONS, PriceRange, IsolationOption } from './exploreConstants';
 
 export type FilterModalProps = {
@@ -13,11 +15,19 @@ export type FilterModalProps = {
   onChangeIsolation: (opt: IsolationOption) => void;
   onClear: () => void;
   onApply: () => void;
+  /** Comodidades escolhidas (a cabana precisa ter todas). */
+  tempAmenities?: readonly string[];
+  onToggleAmenity?: (amenity: string) => void;
+  /** Período escolhido para a busca por disponibilidade, ou null. */
+  tempDates?: { start: string; end: string } | null;
+  onPickDates?: () => void;
+  onClearDates?: () => void;
 };
 
 export function FilterModal({
   visible, onClose, tempPriceRange, onChangePriceRange,
   tempIsolation, onChangeIsolation, onClear, onApply,
+  tempAmenities = [], onToggleAmenity, tempDates = null, onPickDates, onClearDates,
 }: FilterModalProps) {
   // Os botões Limpar/Aplicar não podem ficar atrás da barra de navegação do Android.
   const insets = useSafeAreaInsets();
@@ -64,6 +74,58 @@ export function FilterModal({
                 </TouchableOpacity>
               ))}
             </View>
+
+            {onPickDates && (
+              <>
+                <View style={styles.filterDivider} />
+                <Text style={styles.filterSectionLabel}>Disponibilidade por data</Text>
+                <View style={styles.dateRow}>
+                  <TouchableOpacity
+                    style={styles.dateBtn}
+                    onPress={onPickDates}
+                    accessibilityRole="button"
+                    accessibilityLabel={tempDates ? `Período escolhido de ${formatBR(tempDates.start)} a ${formatBR(tempDates.end)}. Toque para mudar.` : 'Escolher entrada e saída'}
+                    testID="filter-pick-dates"
+                  >
+                    <CalendarDays size={18} color="#2D5A27" />
+                    <Text style={styles.dateBtnText}>
+                      {tempDates ? `${formatBR(tempDates.start)} → ${formatBR(tempDates.end)}` : 'Escolher entrada e saída'}
+                    </Text>
+                  </TouchableOpacity>
+                  {tempDates && onClearDates && (
+                    <TouchableOpacity onPress={onClearDates} accessibilityRole="button" accessibilityLabel="Remover período" hitSlop={8} testID="filter-clear-dates">
+                      <Text style={styles.dateClear}>Remover</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={styles.dateHint}>Mostra só as cabanas livres em todas as noites do período.</Text>
+              </>
+            )}
+
+            {onToggleAmenity && (
+              <>
+                <View style={styles.filterDivider} />
+                <Text style={styles.filterSectionLabel}>Comodidades</Text>
+                <View style={styles.filterOptionsGrid}>
+                  {AMENITY_OPTIONS.map((amenity) => {
+                    const active = tempAmenities.includes(amenity);
+                    return (
+                      <TouchableOpacity
+                        key={amenity}
+                        style={[styles.filterOptionChip, active && styles.filterOptionChipActive]}
+                        onPress={() => onToggleAmenity(amenity)}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: active }}
+                        accessibilityLabel={amenity}
+                        testID={`amenity-${amenity}`}
+                      >
+                        <Text style={[styles.filterOptionText, active && styles.filterOptionTextActive]}>{amenity}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </ScrollView>
           <View style={[styles.modalFooter, { paddingBottom: 16 + insets.bottom }]}>
             <TouchableOpacity style={styles.clearBtn} onPress={onClear}>
@@ -112,6 +174,11 @@ const styles = StyleSheet.create({
   filterIsolationLabel: { flex: 1, fontSize: 14, color: '#4B5563', fontWeight: '500' },
   filterIsolationLabelActive: { color: '#2D5A27', fontWeight: '700' },
   filterCheckDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2D5A27' },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  dateBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  dateBtnText: { fontSize: 14, color: '#374151', fontWeight: '600' },
+  dateClear: { color: '#DC2626', fontWeight: '700', fontSize: 13 },
+  dateHint: { fontSize: 12, color: '#9CA3AF', marginTop: 8 },
   modalFooter: {
     flexDirection: 'row', gap: 12, padding: 20,
     paddingBottom: 34, borderTopWidth: 1, borderTopColor: '#F3F4F6',

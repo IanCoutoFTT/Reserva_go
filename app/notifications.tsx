@@ -16,7 +16,9 @@ import {
   Bell,
   CheckCheck,
 } from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications, AppNotification } from '../context/NotificationContext';
+import { notificationTarget } from '../lib/notificationTarget';
 
 type NotificationType = 'reserva' | 'mensagem' | 'promocao' | 'aviso';
 type FilterType = 'todas' | NotificationType;
@@ -38,6 +40,7 @@ const FILTERS: { key: FilterType; label: string }[] = [
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead, loadError } = useNotifications();
   const [activeFilter, setActiveFilter] = useState<FilterType>('todas');
 
@@ -46,6 +49,13 @@ export default function NotificationsScreen() {
     return notifications.filter(n => n.type === activeFilter);
   }, [notifications, activeFilter]);
 
+  // Marca como lida e leva ao item da notificação (reserva, pagamento, anúncio...), quando há para onde ir.
+  const openNotification = (item: AppNotification) => {
+    markAsRead(item.id);
+    const target = notificationTarget(item, user?.role);
+    if (target) router.push(target as never);
+  };
+
   const renderItem = ({ item }: { item: AppNotification }) => {
     const config = TYPE_CONFIG[item.type];
     const IconComponent = config.icon;
@@ -53,7 +63,7 @@ export default function NotificationsScreen() {
     return (
       <TouchableOpacity
         style={[styles.notifCard, !item.read && styles.notifCardUnread]}
-        onPress={() => markAsRead(item.id)}
+        onPress={() => openNotification(item)}
         activeOpacity={0.7}
       >
         <View style={[styles.notifIconCircle, { backgroundColor: config.bg }]}>

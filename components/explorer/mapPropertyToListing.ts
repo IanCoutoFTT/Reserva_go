@@ -18,5 +18,6 @@ export function mapPropertyToListing(p: DbProperty): Listing {
     category: p.category,
     subCategory: p.sub_category ?? undefined,
     hostId: p.owner_id,
+    amenities: p.amenities ?? [],
   };
 }

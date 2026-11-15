@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LayoutDashboard, CheckCircle, XCircle, TrendingUp, Users, Home, ChevronLeft, AlertOctagon, Star, ShieldAlert } from 'lucide-react-native';
+import { LayoutDashboard, CheckCircle, XCircle, TrendingUp, Users, Home, ChevronLeft, AlertOctagon, Star, ShieldAlert, Wallet, CreditCard, QrCode } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+import { PAYMENTS_ENABLED } from '../lib/card';
+import { BarChart } from '../components/BarChart';
+import { ErrorGroup, groupErrors } from '../lib/errorSummary';
+import { clearErrors, getRecentErrors } from '../services/errorService';
+import { countByDay, revenueByDay, seriesTotal } from '../lib/charts';
+import { FinanceRow, FinanceSummary, PAYMENT_STATUS_LABEL, summarizeFinance } from '../lib/finance';
 import {
   AdminStats,
   archiveReport,
+  getAdminPayments,
+  getRecentBookingDates,
   getPendingProperties,
   getReportsWithContext,
   getStats,
@@ -24,7 +32,16 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const [tab, setTab] = useState<'stats' | 'approvals' | 'reports' | 'highlights'>('stats');
+  const [tab, setTab] = useState<'stats' | 'finance' | 'approvals' | 'reports' | 'highlights' | 'errors'>('stats');
+  // Monitoramento de erros do app (migração 022).
+  const [errorGroups, setErrorGroups] = useState<ErrorGroup[] | null>(null);
+  const [errorsTotal, setErrorsTotal] = useState(0);
+  const [errorsMessage, setErrorsMessage] = useState<string | null>(null);
+  const [finance, setFinance] = useState<FinanceSummary | null>(null);
+  const [financeRows, setFinanceRows] = useState<FinanceRow[]>([]);
+  const [bookingDates, setBookingDates] = useState<string[] | null>(null);
+  const [loadingFinance, setLoadingFinance] = useState(false);
+  const [financeError, setFinanceError] = useState(false);
   const [approvalSubTab, setApprovalSubTab] = useState<ApprovalSubTab>('pendente');
 
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -137,6 +154,67 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, approvalSubTab, isAdmin]);
 
+  const loadErrors = () => {
+    setErrorGroups(null);
+    setErrorsMessage(null);
+    getRecentErrors(200).then(({ data, error }) => {
+      if (error || !data) {
+        setErrorGroups([]);
+        setErrorsTotal(0);
+        setErrorsMessage(error ?? 'Não foi possível carregar os erros agora.');
+        return;
+      }
+      setErrorsTotal(data.length);
+      setErrorGroups(groupErrors(data));
+    });
+  };
+
+  // A aba de erros recarrega a cada abertura, para mostrar o que acabou de acontecer.
+  useEffect(() => {
+    if (tab === 'errors' && isAdmin) loadErrors();
+  }, [tab, isAdmin]);
+
+  const handleClearErrors = () => {
+    Alert.alert('Limpar o registro de erros?', 'Todos os erros registrados serão apagados. Isso não pode ser desfeito.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Limpar',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await clearErrors();
+          if (error) {
+            Alert.alert('Erro', error);
+            return;
+          }
+          loadErrors();
+        },
+      },
+    ]);
+  };
+
+  // Reservas dos últimos 7 dias, para o gráfico da aba Dados.
+  useEffect(() => {
+    if (!isAdmin) return;
+    getRecentBookingDates(7).then(({ data, error }) => {
+      if (error) console.log('[admin] getRecentBookingDates falhou ->', error);
+      setBookingDates(data ?? []);
+    });
+  }, [isAdmin]);
+
+  // O financeiro só carrega quando o admin abre a aba (e recarrega a cada abertura, para ver o que entrou).
+  useEffect(() => {
+    if (tab !== 'finance' || !isAdmin || !PAYMENTS_ENABLED) return;
+    setLoadingFinance(true);
+    setFinanceError(false);
+    getAdminPayments().then(({ data, error }) => {
+      if (error) console.log('[admin] getAdminPayments falhou ->', error);
+      setFinanceError(!!error);
+      setFinanceRows(data ?? []);
+      setFinance(data ? summarizeFinance(data) : null);
+      setLoadingFinance(false);
+    });
+  }, [tab, isAdmin]);
+
   useEffect(() => {
     if (tab === 'highlights' && !loadingFeaturedList) loadFeaturedList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,6 +307,11 @@ export default function AdminDashboard() {
             <Text style={[styles.tabText, tab === 'stats' && styles.activeTabText]}>Dados</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity style={[styles.tab, tab === 'finance' && styles.activeTab]} onPress={() => setTab('finance')}>
+            <Wallet size={18} color={tab === 'finance' ? '#2D5A27' : '#9CA3AF'} />
+            <Text style={[styles.tabText, tab === 'finance' && styles.activeTabText]}>Financeiro</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={[styles.tab, tab === 'approvals' && styles.activeTab]} onPress={() => setTab('approvals')}>
             <CheckCircle size={18} color={tab === 'approvals' ? '#2D5A27' : '#9CA3AF'} />
             <Text style={[styles.tabText, tab === 'approvals' && styles.activeTabText]}>
@@ -241,6 +324,11 @@ export default function AdminDashboard() {
             <Text style={[styles.tabText, tab === 'reports' && { color: '#EF4444' }]}>
               Denúncias{reports.length > 0 ? ` (${reports.length})` : ''}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.tab, tab === 'errors' && styles.activeTab]} onPress={() => setTab('errors')} accessibilityRole="tab" accessibilityState={{ selected: tab === 'errors' }}>
+            <ShieldAlert size={18} color={tab === 'errors' ? '#2D5A27' : '#9CA3AF'} />
+            <Text style={[styles.tabText, tab === 'errors' && styles.activeTabText]}>Erros</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.tab, tab === 'highlights' && styles.activeTab]} onPress={() => setTab('highlights')}>
@@ -269,6 +357,16 @@ export default function AdminDashboard() {
               </View>
             )}
 
+            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Reservas nos últimos 7 dias</Text>
+            {bookingDates === null ? (
+              <ActivityIndicator color="#2D5A27" style={{ marginVertical: 20 }} />
+            ) : (
+              <>
+                <BarChart title="Reservas por dia" data={countByDay(bookingDates, 7)} />
+                <Text style={styles.chartNote}>{bookingDates.length} reserva{bookingDates.length === 1 ? '' : 's'} na semana</Text>
+              </>
+            )}
+
             <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Ranking: Cabanas Mais Usadas</Text>
             {loadingTop ? (
               <ActivityIndicator size="large" color="#2D5A27" style={{ marginVertical: 20 }} />
@@ -290,6 +388,104 @@ export default function AdminDashboard() {
                   </View>
                 </View>
               ))
+            )}
+          </View>
+        )}
+
+        {tab === 'finance' && (
+          <View>
+            <Text style={styles.sectionTitle}>Financeiro da Plataforma</Text>
+            {!PAYMENTS_ENABLED ? (
+              <Text style={styles.emptyText}>Os pagamentos estão desligados neste build, então não há movimentação para mostrar.</Text>
+            ) : loadingFinance ? (
+              <ActivityIndicator size="large" color="#2D5A27" style={{ marginVertical: 20 }} />
+            ) : financeError || !finance ? (
+              <Text style={styles.emptyText}>Não foi possível carregar o financeiro agora. Volte a esta aba para tentar de novo.</Text>
+            ) : (
+              <>
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCard}>
+                    <Wallet size={24} color="#2D5A27" />
+                    <Text style={styles.statValue}>{formatCurrency(finance.platformTotal)}</Text>
+                    <Text style={styles.statLabel}>Receita da plataforma (taxa de serviço)</Text>
+                  </View>
+                  <View style={styles.statCard}>
+                    <Home size={24} color="#F59E0B" />
+                    <Text style={styles.statValue}>{formatCurrency(finance.hostTotal)}</Text>
+                    <Text style={styles.statLabel}>A repassar aos anfitriões (diárias)</Text>
+                  </View>
+                  <View style={styles.statCard}>
+                    <TrendingUp size={24} color="#10B981" />
+                    <Text style={styles.statValue}>{formatCurrency(finance.paidTotal)}</Text>
+                    <Text style={styles.statLabel}>Total recebido em {finance.paidCount} pagamento{finance.paidCount === 1 ? '' : 's'}</Text>
+                  </View>
+                  <View style={styles.statCard}>
+                    <Users size={24} color="#3B82F6" />
+                    <Text style={styles.statValue}>{formatCurrency(finance.avgTicket)}</Text>
+                    <Text style={styles.statLabel}>Ticket médio por reserva</Text>
+                  </View>
+                </View>
+
+                {finance.toRefundCount > 0 && (
+                  <View style={styles.refundBox}>
+                    <AlertOctagon size={20} color="#B91C1C" />
+                    <Text style={styles.refundText}>
+                      {finance.toRefundCount} pagamento{finance.toRefundCount === 1 ? '' : 's'} ({formatCurrency(finance.toRefundTotal)}) de reserva
+                      {finance.toRefundCount === 1 ? ' cancelada' : 's canceladas'}: é preciso devolver o valor.
+                    </Text>
+                  </View>
+                )}
+
+                <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Recebido nos últimos 7 dias</Text>
+                <BarChart
+                  title="Valor recebido por dia"
+                  data={revenueByDay(financeRows, 7)}
+                  formatValue={(v) => `R$ ${Math.round(v)}`}
+                />
+                <Text style={styles.chartNote}>Total da semana: {formatCurrency(seriesTotal(revenueByDay(financeRows, 7)))}</Text>
+
+                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Por forma de pagamento</Text>
+                <View style={styles.methodRow}>
+                  <View style={styles.methodCard}>
+                    <QrCode size={20} color="#2D5A27" />
+                    <Text style={styles.methodName}>Pix</Text>
+                    <Text style={styles.methodValue}>{formatCurrency(finance.byMethod.pix.total)}</Text>
+                    <Text style={styles.statLabel}>{finance.byMethod.pix.count} pagamento{finance.byMethod.pix.count === 1 ? '' : 's'}</Text>
+                  </View>
+                  <View style={styles.methodCard}>
+                    <CreditCard size={20} color="#2D5A27" />
+                    <Text style={styles.methodName}>Cartão</Text>
+                    <Text style={styles.methodValue}>{formatCurrency(finance.byMethod.card.total)}</Text>
+                    <Text style={styles.statLabel}>{finance.byMethod.card.count} pagamento{finance.byMethod.card.count === 1 ? '' : 's'}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.financeNote}>
+                  Aguardando pagamento: {finance.pendingCount} ({formatCurrency(finance.pendingTotal)}) · Vencidos ou recusados: {finance.expiredCount}
+                </Text>
+
+                <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Últimas movimentações</Text>
+                {finance.recent.length === 0 ? (
+                  <Text style={styles.emptyText}>Nenhum pagamento ainda.</Text>
+                ) : (
+                  finance.recent.map((p) => (
+                    <View key={p.id} style={styles.cabinCard}>
+                      <View style={styles.cabinInfo}>
+                        <Text style={styles.cabinName} numberOfLines={1}>{p.booking?.title ?? 'Cabana'}</Text>
+                        <Text style={styles.cabinHost}>
+                          {p.booking?.method === 'card' ? 'Cartão' : 'Pix'} · plataforma {formatCurrency(p.platformFee)} · anfitrião {formatCurrency(p.hostAmount)}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.cabinPrice}>{formatCurrency(p.amount)}</Text>
+                        <Text style={[styles.statusChip, p.status === 'pago' ? styles.chipPaid : p.status === 'aguardando' ? styles.chipWaiting : styles.chipOff]}>
+                          {PAYMENT_STATUS_LABEL[p.status] ?? p.status}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </>
             )}
           </View>
         )}
@@ -433,6 +629,44 @@ export default function AdminDashboard() {
           </View>
         )}
 
+        {tab === 'errors' && (
+          <View>
+            <Text style={styles.sectionTitle}>Erros do aplicativo</Text>
+            <Text style={styles.financeNote}>
+              Registrados sozinhos quando uma tela quebra ou um erro não tratado acontece num celular. E-mails e códigos de acesso são removidos antes do envio.
+            </Text>
+            {errorGroups === null ? (
+              <ActivityIndicator size="large" color="#2D5A27" style={{ marginVertical: 20 }} />
+            ) : errorsMessage ? (
+              <Text style={styles.emptyText}>{errorsMessage}</Text>
+            ) : errorGroups.length === 0 ? (
+              <Text style={styles.emptyText} testID="errors-empty">Nenhum erro registrado. Tudo certo por aqui.</Text>
+            ) : (
+              <>
+                <Text style={[styles.chartNote, { marginBottom: 12 }]}>
+                  {errorsTotal} ocorrência{errorsTotal === 1 ? '' : 's'} em {errorGroups.length} tipo{errorGroups.length === 1 ? '' : 's'} de erro
+                </Text>
+                {errorGroups.map((g) => (
+                  <View key={g.message} style={styles.errorCard}>
+                    <Text style={styles.errorMessage} numberOfLines={3}>{g.message}</Text>
+                    <Text style={styles.errorMeta}>
+                      {g.count} vez{g.count === 1 ? '' : 'es'} · {g.last24h} nas últimas 24 h · {g.users} pessoa{g.users === 1 ? '' : 's'}
+                    </Text>
+                    <Text style={styles.errorMeta}>
+                      {g.screens.length ? `Tela: ${g.screens.join(', ')}` : 'Tela não informada'}
+                      {g.versions.length ? ` · Versão ${g.versions.join(', ')}` : ''}
+                    </Text>
+                    <Text style={styles.errorMeta}>Último: {new Date(g.last).toLocaleString('pt-BR')}</Text>
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.archiveBtn} onPress={handleClearErrors} accessibilityRole="button" accessibilityLabel="Limpar o registro de erros">
+                  <Text style={styles.archiveText}>Limpar registro</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         {tab === 'highlights' && (
           <View>
             <Text style={styles.sectionTitle}>Destaques da Explorar</Text>
@@ -504,6 +738,22 @@ const styles = StyleSheet.create({
   cabinHost: { fontSize: 13, color: '#6B7280', marginTop: 4 },
   cabinPrice: { fontSize: 14, color: '#2D5A27', fontWeight: '700', marginTop: 4 },
   actionButtons: { flexDirection: 'row', gap: 15 },
+
+  chartNote: { fontSize: 12, color: '#6B7280', marginTop: 8 },
+  errorCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#FEE2E2', borderLeftWidth: 4, borderLeftColor: '#EF4444', padding: 14, marginBottom: 10, gap: 3 },
+  errorMessage: { fontSize: 14, fontWeight: '700', color: '#1F2937' },
+  errorMeta: { fontSize: 12, color: '#6B7280' },
+  refundBox: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FEE2E2', borderRadius: 12, padding: 14, marginBottom: 20 },
+  refundText: { flex: 1, color: '#991B1B', fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  methodRow: { flexDirection: 'row', gap: 12 },
+  methodCard: { flex: 1, backgroundColor: '#fff', padding: 16, borderRadius: 15, borderWidth: 1, borderColor: '#F3F4F6', gap: 4 },
+  methodName: { fontSize: 13, fontWeight: '700', color: '#374151' },
+  methodValue: { fontSize: 20, fontWeight: 'bold', color: '#1F2937' },
+  financeNote: { fontSize: 13, color: '#6B7280', marginTop: 14 },
+  statusChip: { fontSize: 11, fontWeight: '700', marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
+  chipPaid: { backgroundColor: '#D1FAE5', color: '#065F46' },
+  chipWaiting: { backgroundColor: '#FEF3C7', color: '#92400E' },
+  chipOff: { backgroundColor: '#F3F4F6', color: '#6B7280' },
 
   reportCard: { backgroundColor: '#FEF2F2', padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#FEE2E2', marginBottom: 15 },
   reportTarget: { fontSize: 13, color: '#1F2937', fontWeight: '600', marginBottom: 4 },

@@ -6,7 +6,8 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { StripeProvider } from '@stripe/stripe-react-native';
+import { ReactElement, useEffect } from 'react';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -16,8 +17,14 @@ import { FavoritesProvider } from '../context/FavoritesContext';
 import { NotificationProvider } from '../context/NotificationContext';
 import { ListingProvider } from '../context/ListingContext';
 import { useColorScheme } from '../components/useColorScheme';
+import { CARD_ENABLED, STRIPE_PUBLISHABLE_KEY } from '../lib/card';
+import { installGlobalErrorHandler } from '../lib/installErrorHandler';
 
-export { ErrorBoundary } from 'expo-router';
+// Tela de erro própria: registra o erro no Supabase (migração 022) e oferece "Tentar de novo".
+export { AppErrorBoundary as ErrorBoundary } from '../components/AppErrorBoundary';
+
+// Erros não tratados do JavaScript também vão para o monitoramento (uma única vez).
+installGlobalErrorHandler();
 
 export const unstable_settings = {
   initialRouteName: '(tabs)',
@@ -53,11 +60,23 @@ export default function RootLayout() {
   );
 }
 
+// A Stripe só entra quando o cartão está ligado neste build (lib/card.ts). Desligado, o app
+// nem monta o provedor: o cartão segue como antes, sem cobrar.
+function WithStripe({ children }: { children: ReactElement }) {
+  if (!CARD_ENABLED) return children;
+  return (
+    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY} urlScheme="reservago">
+      {children}
+    </StripeProvider>
+  );
+}
+
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <WithStripe>
       <Stack initialRouteName="(tabs)">
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -72,7 +91,9 @@ function RootLayoutNav() {
         <Stack.Screen name="review" options={{ headerShown: false }} />
         <Stack.Screen name="pix-payment" options={{ headerShown: false }} />
         <Stack.Screen name="payout-settings" options={{ headerShown: false }} />
+        <Stack.Screen name="card-payment" options={{ headerShown: false }} />
       </Stack>
+      </WithStripe>
     </ThemeProvider>
   );
 }

@@ -2,6 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SkeletonCardList } from '../../components/Skeleton';
 import { PropertyCard } from '../../components/PropertyCard';
 import { mapPropertyToListing } from '../../components/explorer/mapPropertyToListing';
 import { useAuth } from '../../context/AuthContext';
@@ -64,9 +65,7 @@ export default function FavoritesScreen() {
         <Text style={styles.title}>Meus Favoritos</Text>
       </View>
       {loading && favoriteItems.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#2D5A27" />
-        </View>
+        <SkeletonCardList count={2} testID="favorites-loading" />
       ) : favoriteItems.length > 0 ? (
         <FlatList
           data={favoriteItems}

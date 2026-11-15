@@ -18,6 +18,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useListings } from '../context/ListingContext';
 import { LISTING_LIMITS, validateListing } from '../lib/listingValidation';
+import { rateLimitMessage } from '../lib/rateLimit';
+import { AMENITY_OPTIONS as AMENITIES_LIST } from '../lib/amenities';
 import { createProperty, updateProperty, uploadPropertyImage, UpdatableProperty } from '../services/propertyService';
 import type { IsolationLevel } from '../services/types';
 
@@ -45,18 +47,8 @@ const SUB_CATEGORIES: Record<string, { id: string; label: string }[]> = {
   ],
 };
 
-const AMENITY_OPTIONS = [
-  'Wi-Fi',
-  'Piscina',
-  'Churrasqueira',
-  'Lareira',
-  'Ar-condicionado',
-  'Cozinha completa',
-  'Estacionamento',
-  'Vista panorâmica',
-  'Trilha privativa',
-  'Aceita pets',
-];
+// Lista compartilhada com o filtro de comodidades da Explorar (lib/amenities.ts).
+const AMENITY_OPTIONS: readonly string[] = AMENITIES_LIST;
 
 const ISOLATION_LEVELS = [
   { id: 'urbano',  emoji: '🏘️', label: 'Vizinhos próximos',  description: 'Área residencial ou vila, vizinhos a menos de 500m.' },
@@ -266,6 +258,13 @@ export default function CreateListingScreen() {
     });
 
     setSaving(false);
+
+    // Limite de envio (migração 017): o servidor recusou de propósito. Não vale salvar só no aparelho.
+    const limit = rateLimitMessage(error);
+    if (limit) {
+      Alert.alert('Anúncio não publicado', limit);
+      return;
+    }
 
     if (error || !property) {
       console.log('[create-listing] createProperty falhou, salvando local ->', error);

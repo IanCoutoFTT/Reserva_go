@@ -9,7 +9,8 @@ import { cancelBooking as cancelBookingRemote, getBookingsByGuest } from '../../
 import type { BookingWithProperty } from '../../services/types';
 import { formatCurrency } from '../../lib/format';
 import { paymentStatusOf } from '../../lib/pix';
-import { BookingTab, bookingTabOf, canCancelStay, stayEnded } from '../../lib/booking';
+import { BookingTab, bookingTabOf, cancelConfirmMessage, canCancelStay, isAwaitingPayment, isNoShow, stayEnded } from '../../lib/booking';
+import { SkeletonCardList } from '../../components/Skeleton';
 import { PropertyImage } from '../../components/PropertyImage';
 
 // Linha unificada de exibição - pode vir de uma reserva real (Supabase,
@@ -33,6 +34,10 @@ type BookingRow = {
   payMethod?: string;
   /** Situação do Pix ('aguardando', 'pago'...), só com o pagamento ligado. */
   paymentStatus?: string | null;
+  /** O anfitrião marcou que o hóspede não compareceu (migração 018). */
+  noShow?: boolean;
+  /** A reserva exige pagamento (migração 019): sem cobrança aberta ela ainda assim está aguardando. */
+  paymentRequired?: boolean;
 };
 
 function isoToBR(iso: string): string {
@@ -99,6 +104,8 @@ export default function BookingsScreen() {
       total: b.total,
       payMethod: b.pay_method,
       paymentStatus: paymentStatusOf(b.payments),
+      noShow: isNoShow(b),
+      paymentRequired: !!b.payment_required,
     }));
 
     const localRows: BookingRow[] = localBookings.map((b, index) => {
@@ -134,7 +141,7 @@ export default function BookingsScreen() {
   const handleCancel = (row: BookingRow) => {
     Alert.alert(
       'Cancelar reserva',
-      `Tem certeza que deseja cancelar a reserva de "${row.propertyTitle}"?`,
+      cancelConfirmMessage(row.propertyTitle, row.paymentStatus === 'pago'),
       [
         { text: 'Não', style: 'cancel' },
         {
@@ -171,9 +178,13 @@ export default function BookingsScreen() {
     const isActive = item.status === 'reservada' && !ended;
     // Estadia em andamento continua "Confirmada", mas não pode mais ser cancelada (T-05).
     const canCancel = isActive && (!item.checkInIso || canCancelStay(item.checkInIso));
-    const canReview = item.isReal && item.status !== 'cancelada' && ended;
-    // Reserva Pix ainda não paga (só aparece com o pagamento ligado): o hóspede pode voltar ao QR Code.
-    const awaitingPayment = isActive && item.isReal && item.payMethod === 'pix' && item.paymentStatus === 'aguardando';
+    // Não comparecimento (migração 018): a estadia não aconteceu, então não há avaliação.
+    const noShow = !!item.noShow;
+    const canReview = item.isReal && item.status !== 'cancelada' && ended && !noShow;
+    // Reserva ainda não paga (só aparece com o pagamento ligado): o hóspede pode voltar ao QR Code do Pix
+    // ou à tela de pagamento do cartão.
+    const awaitingPayment =
+      item.isReal && isAwaitingPayment({ active: isActive, noShow, paymentStatus: item.paymentStatus, paymentRequired: item.paymentRequired });
 
     return (
       <TouchableOpacity
@@ -189,9 +200,9 @@ export default function BookingsScreen() {
         <PropertyImage uri={item.propertyImage} style={styles.cardImage} iconSize={28} />
         <View style={styles.cardInfo}>
           <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, { backgroundColor: awaitingPayment ? '#F59E0B' : isActive ? '#2D5A27' : '#9CA3AF' }]} />
+            <View style={[styles.statusDot, { backgroundColor: awaitingPayment || noShow ? '#F59E0B' : isActive ? '#2D5A27' : '#9CA3AF' }]} />
             <Text style={styles.statusText}>
-              {item.status === 'cancelada' ? 'Cancelada' : awaitingPayment ? 'Aguardando pagamento' : isActive ? 'Confirmada' : 'Realizada'}
+              {item.status === 'cancelada' ? 'Cancelada' : noShow ? 'Não compareceu' : awaitingPayment ? 'Aguardando pagamento' : isActive ? 'Confirmada' : 'Realizada'}
             </Text>
           </View>
           <Text style={styles.cardTitle} numberOfLines={1}>{item.propertyTitle}</Text>
@@ -219,7 +230,7 @@ export default function BookingsScreen() {
             {awaitingPayment && (
               <TouchableOpacity
                 style={styles.reviewBtn}
-                onPress={() => router.push({ pathname: '/pix-payment', params: { bookingId: item.bookingId } })}
+                onPress={() => router.push({ pathname: item.payMethod === 'card' ? '/card-payment' : '/pix-payment', params: { bookingId: item.bookingId } })}
               >
                 <CreditCard size={12} color="#2D5A27" />
                 <Text style={styles.reviewBtnText}>Pagar agora</Text>
@@ -250,9 +261,7 @@ export default function BookingsScreen() {
         <Text style={styles.title}>Minhas Viagens</Text>
       </View>
       {loading ? (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#2D5A27" />
-        </View>
+        <SkeletonCardList count={2} testID="trips-loading" />
       ) : rows.length > 0 ? (
         <>
           <View style={styles.tabs}>

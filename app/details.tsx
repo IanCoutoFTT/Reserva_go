@@ -29,13 +29,18 @@ import { useAuth } from '../context/AuthContext';
 import { useBookings } from '../context/BookingContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { formatCurrency } from '../lib/format';
+import { CARD_ENABLED } from '../lib/card';
+import { rateLimitMessage } from '../lib/rateLimit';
 import { PIX_ENABLED } from '../lib/pix';
 import { checkAvailability, createBooking } from '../services/bookingService';
 import { getOrCreateConversation } from '../services/messageService';
 import { getProfile } from '../services/profileService';
 import { getPropertyById } from '../services/propertyService';
 import { createReport } from '../services/reportService';
-import { getReviewsByProperty } from '../services/reviewService';
+import { getReviewsByProperty, replyToReview } from '../services/reviewService';
+import { canReplyToReview, REPLY_MAX, validateReply } from '../lib/reviews';
+import { blockedRanges } from '../services/availabilityService';
+import { isInRanges, overlapsRanges, Range, toISO } from '../lib/dateRange';
 import type { Property as DbProperty, PublicProfile, ReviewWithAuthor } from '../services/types';
 
 const REPORT_REASONS = [
@@ -111,6 +116,22 @@ export default function DetailsScreen() {
   const [reviews, setReviews] = useState<ReviewWithAuthor[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [reviewsFailed, setReviewsFailed] = useState(false);
+  // Resposta do anfitrião às avaliações (migração 020).
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [savingReply, setSavingReply] = useState(false);
+  // Datas que o anfitrião bloqueou (migração 021): ficam apagadas no calendário da reserva.
+  const [blockedList, setBlockedList] = useState<Range[]>([]);
+  useEffect(() => {
+    if (!id || typeof id !== 'string') return;
+    let cancelled = false;
+    blockedRanges(id).then(({ data }) => {
+      if (!cancelled) setBlockedList(data ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
   const [confirming, setConfirming] = useState(false);
 
   // Anfitrião real (antes era 100% hardcoded: "Carlos Mendes" + foto fixa,
@@ -320,6 +341,8 @@ export default function DetailsScreen() {
       price_per_night: priceNum,
       total: finalTotal,
       pix_discount: payMethod === 'pix',
+      // Reserva que exige pagamento (migração 019): sem cobrança em 30 min, o servidor a cancela.
+      payment_required: (PIX_ENABLED && payMethod === 'pix') || (CARD_ENABLED && payMethod === 'card'),
     });
 
     setConfirming(false);
@@ -335,6 +358,11 @@ export default function DetailsScreen() {
     // pagar o Pix, dentro do prazo. Desligado, segue o fluxo de sempre.
     if (PIX_ENABLED && payMethod === 'pix') {
       router.replace({ pathname: '/pix-payment', params: { bookingId: booking.id } });
+      return;
+    }
+    // Cartão ligado (EXPO_PUBLIC_CARD_ENABLED): mesma regra, pagando na tela da Stripe.
+    if (CARD_ENABLED && payMethod === 'card') {
+      router.replace({ pathname: '/card-payment', params: { bookingId: booking.id } });
       return;
     }
 
@@ -391,7 +419,7 @@ export default function DetailsScreen() {
 
     if (error || !conversationId) {
       console.log('[details] getOrCreateConversation falhou ->', error);
-      Alert.alert('Erro', 'Não foi possível abrir a conversa agora. Tente novamente.');
+      Alert.alert('Erro', rateLimitMessage(error) ?? 'Não foi possível abrir a conversa agora. Tente novamente.');
       return;
     }
 
@@ -435,7 +463,7 @@ export default function DetailsScreen() {
 
     if (error) {
       console.log('[details] createReport falhou ->', error);
-      Alert.alert('Erro', 'Não foi possível enviar a denúncia agora. Tente novamente.');
+      Alert.alert('Denúncia não enviada', rateLimitMessage(error) ?? 'Não foi possível enviar a denúncia agora. Tente novamente.');
       return;
     }
 
@@ -470,6 +498,7 @@ export default function DetailsScreen() {
     for (let i = 1; i <= daysInMonth; i++) {
       const dateObj = new Date(year, month, i);
       const isPast = dateObj < today;
+      const isBlocked = isInRanges(toISO(dateObj), blockedList);
       const isSelected = isSameDay(checkInDate, dateObj) || isSameDay(checkOutDate, dateObj);
       const isInRange =
         !!checkInDate && !!checkOutDate && dateObj > checkInDate && dateObj < checkOutDate;
@@ -477,13 +506,15 @@ export default function DetailsScreen() {
       days.push(
         <TouchableOpacity
           key={i}
-          disabled={isPast}
+          disabled={isPast || (selectingDate === 'checkIn' && isBlocked)}
           testID={`calendar-day-${i}`}
+          accessibilityLabel={`${i} de ${MONTH_NAMES[month]}${isBlocked ? ', bloqueado pelo anfitrião' : ''}`}
           style={[
             styles.calDay,
             isSelected && styles.calDaySelected,
             isInRange && styles.calDayInRange,
             isPast && { opacity: 0.2 },
+            isBlocked && !isPast && { opacity: 0.3, backgroundColor: '#F3F4F6' },
           ]}
           onPress={() => {
             if (selectingDate === 'checkIn') {
@@ -493,6 +524,10 @@ export default function DetailsScreen() {
             } else {
               if (checkInDate && dateObj <= checkInDate) {
                 Alert.alert('Erro', 'O Check-out deve ser depois do Check-in.');
+                return;
+              }
+              if (checkInDate && overlapsRanges(toISO(checkInDate), toISO(dateObj), blockedList)) {
+                Alert.alert('Datas indisponíveis', 'O anfitrião bloqueou alguns dias desse período. Escolha outras datas.');
                 return;
               }
               setCheckOutDate(dateObj);
@@ -516,6 +551,32 @@ export default function DetailsScreen() {
   const isolationInfo = ISOLATION_MAP[String(displayIsolationLevel).toLowerCase()] ?? DEFAULT_ISOLATION;
   const amenitiesFromDb = property?.amenities ?? [];
   const reviewsCountLabel = loadingReviews ? '···' : reviewsFailed ? '—' : reviews.length;
+
+  // O dono da cabana responde às avaliações; só ele vê o botão (o banco confere de novo).
+  const isHostOfProperty = !!user && !!property && property.owner_id === user.id;
+
+  const startReply = (r: ReviewWithAuthor) => {
+    setReplyingId(r.id);
+    setReplyText(r.host_reply ?? '');
+  };
+
+  const submitReply = async (r: ReviewWithAuthor) => {
+    const check = validateReply(replyText);
+    if (!check.ok) {
+      Alert.alert('Resposta', check.error);
+      return;
+    }
+    setSavingReply(true);
+    const { error } = await replyToReview(r.id, check.value);
+    setSavingReply(false);
+    if (error) {
+      Alert.alert('Resposta não enviada', error);
+      return;
+    }
+    setReviews((prev) => prev.map((x) => (x.id === r.id ? { ...x, host_reply: check.value, host_replied_at: new Date().toISOString() } : x)));
+    setReplyingId(null);
+    setReplyText('');
+  };
 
   return (
     <View style={styles.container}>
@@ -610,6 +671,55 @@ export default function DetailsScreen() {
                     ))}
                   </View>
                   <Text style={styles.reviewComment}>{r.comment}</Text>
+
+                  {!!r.host_reply && (
+                    <View style={styles.replyBox} accessibilityLabel="Resposta do anfitrião">
+                      <Text style={styles.replyLabel}>Resposta do anfitrião</Text>
+                      <Text style={styles.replyText}>{r.host_reply}</Text>
+                    </View>
+                  )}
+
+                  {replyingId === r.id ? (
+                    <View style={styles.replyForm}>
+                      <TextInput
+                        style={styles.replyInput}
+                        value={replyText}
+                        onChangeText={setReplyText}
+                        placeholder="Escreva uma resposta cordial e objetiva"
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        maxLength={REPLY_MAX}
+                        accessibilityLabel="Resposta à avaliação"
+                      />
+                      <Text style={styles.replyCounter}>{replyText.trim().length}/{REPLY_MAX}</Text>
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity
+                          style={styles.replySend}
+                          onPress={() => submitReply(r)}
+                          disabled={savingReply}
+                          accessibilityRole="button"
+                          accessibilityLabel="Enviar resposta"
+                        >
+                          {savingReply ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.replySendText}>Enviar resposta</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.replyCancel}
+                          onPress={() => setReplyingId(null)}
+                          disabled={savingReply}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancelar resposta"
+                        >
+                          <Text style={styles.replyCancelText}>Cancelar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    canReplyToReview(r, isHostOfProperty) && (
+                      <TouchableOpacity onPress={() => startReply(r)} accessibilityRole="button" accessibilityLabel={r.host_reply ? 'Corrigir resposta' : 'Responder avaliação'}>
+                        <Text style={styles.replyLink}>{r.host_reply ? 'Corrigir resposta' : 'Responder'}</Text>
+                      </TouchableOpacity>
+                    )
+                  )}
                 </View>
               </View>
             ))
@@ -864,6 +974,17 @@ const styles = StyleSheet.create({
   reviewAvatar: { width: 44, height: 44, borderRadius: 22 },
   reviewAuthor: { fontWeight: 'bold', fontSize: 14 },
   reviewDate: { fontSize: 12, color: '#9CA3AF' },
+  replyBox: { marginTop: 10, backgroundColor: '#F0F7F0', borderLeftWidth: 3, borderLeftColor: '#2D5A27', borderRadius: 8, padding: 10 },
+  replyLabel: { fontSize: 12, fontWeight: '700', color: '#2D5A27', marginBottom: 2 },
+  replyText: { fontSize: 13, color: '#374151', lineHeight: 19 },
+  replyLink: { marginTop: 8, color: '#2D5A27', fontWeight: '700', fontSize: 13 },
+  replyForm: { marginTop: 10, gap: 6 },
+  replyInput: { minHeight: 70, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, padding: 10, fontSize: 14, color: '#1F2937', textAlignVertical: 'top' },
+  replyCounter: { alignSelf: 'flex-end', fontSize: 11, color: '#9CA3AF' },
+  replySend: { backgroundColor: '#2D5A27', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 16, minHeight: 40, justifyContent: 'center' },
+  replySendText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  replyCancel: { borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 16, minHeight: 40, justifyContent: 'center' },
+  replyCancelText: { color: '#4B5563', fontWeight: '600', fontSize: 13 },
   reviewComment: { fontSize: 13, color: '#4B5563', lineHeight: 18, marginTop: 2 },
   hostCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, backgroundColor: '#F9FAFB', borderRadius: 14 },
   hostAvatar: { width: 50, height: 50, borderRadius: 25 },

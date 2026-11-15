@@ -104,4 +104,13 @@ Diga na apresentação que é **ambiente de testes**: em produção entra um pro
 * Devolução de dinheiro (reembolso) quando o hóspede cancela uma reserva já paga. O aviso ao admin existe só para o Pix pago depois do cancelamento.
 * Painel do admin com o total de comissões (os dados estão em `payments`, o admin já consegue ler).
 * Teste real com o Asaas, nota fiscal, cadastro (KYC) dos anfitriões e demais exigências de um pagamento de verdade.
-* Cartão: continua sem cobrança.
+* Cartão de crédito: veja `docs/pagamento-cartao.md` (Stripe, modo de teste).
+
+## Avisos de pagamento pendente (migração 016, vale para Pix e cartão)
+
+Se o hóspede reserva e escolhe "Pagar depois", ele recebe, dentro do app:
+
+1. **Ao criar a cobrança:** "Reserva aguardando pagamento. Pague em até 30 minutos ou ela será cancelada".
+2. **Um lembrete** quando faltarem 10 minutos ou menos: "Falta pouco para pagar". Enviado uma única vez por cobrança.
+
+O lembrete sai da mesma rotina do `pg_cron` que expira cobranças (a cada 5 minutos), então chega entre 5 e 10 minutos antes do vencimento e não é preciso agendar nada novo. Se a cobrança vence e é reaberta, o aviso e o lembrete valem de novo. Aviso no celular com o app fechado (notificação push) ainda não existe.

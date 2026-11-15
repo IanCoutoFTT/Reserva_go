@@ -64,8 +64,14 @@ export function SearchHeader({
             <Text style={styles.cancelText}>Cancelar</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.filterButton} onPress={onOpenFilterModal}>
-            <SlidersHorizontal size={18} color={activeFiltersCount > 0 ? '#fff' : '#2D5A27'} />
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={onOpenFilterModal}
+            accessibilityRole="button"
+            accessibilityLabel={activeFiltersCount > 0 ? `Filtros, ${activeFiltersCount} ativo${activeFiltersCount === 1 ? '' : 's'}` : 'Filtros'}
+          >
+            {/* Sempre verde-escuro: o fundo é claro, e antes o ícone ficava branco (invisível) com filtro ativo. */}
+            <SlidersHorizontal size={18} color="#2D5A27" />
             {activeFiltersCount > 0 && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>{activeFiltersCount}</Text>
