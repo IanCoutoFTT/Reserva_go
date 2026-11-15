@@ -93,6 +93,11 @@ export interface Booking {
   status: BookingStatus;
   cancelled_at: string | null;
   cancel_reason: string | null;
+  /** Quando o anfitrião marcou o não comparecimento (migração 018). null = compareceu ou ainda não marcado. */
+  no_show_at?: string | null;
+  no_show_by?: string | null;
+  /** Reserva que precisa ser paga (Pix ou cartão com o pagamento ligado). Sem cobrança em 30 min, é cancelada (migração 019). */
+  payment_required?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -100,7 +105,7 @@ export interface Booking {
 export type NewBooking = Pick<
   Booking,
   'property_id' | 'guest_id' | 'check_in' | 'check_out' | 'pay_method' | 'price_per_night' | 'total' | 'pix_discount'
->;
+> & { payment_required?: boolean };
 
 /**
  * Booking + dados básicos da propriedade, via embed properties(...) no select
@@ -145,6 +150,9 @@ export interface Review {
   rating: number; // 1-5
   comment: string;
   created_at: string;
+  /** Resposta do anfitrião (migração 020). */
+  host_reply?: string | null;
+  host_replied_at?: string | null;
 }
 
 export type NewReview = Pick<Review, 'property_id' | 'booking_id' | 'author_id' | 'rating' | 'comment'>;
@@ -174,9 +182,11 @@ export interface Message {
   content: string;
   read_at: string | null;
   created_at: string;
+  /** Foto da mensagem, dentro do bucket privado chat-images (migração 023). */
+  image_path?: string | null;
 }
 
-export type NewMessage = Pick<Message, 'conversation_id' | 'sender_id' | 'content'>;
+export type NewMessage = Pick<Message, 'conversation_id' | 'sender_id' | 'content'> & { image_path?: string | null };
 
 /**
  * Conversation + nome/avatar dos dois participantes, via embed duplo de

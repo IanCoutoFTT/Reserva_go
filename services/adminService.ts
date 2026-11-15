@@ -1,3 +1,4 @@
+import { FinanceRow, toFinanceRow } from '../lib/finance';
 import { supabase } from '../lib/supabase';
 import { Property, Report, ReportStatus, ServiceResult, toResult } from './types';
 
@@ -35,6 +36,21 @@ export async function getStats(): Promise<ServiceResult<AdminStats>> {
     },
     error: null,
   };
+}
+
+/**
+ * Pagamentos da plataforma para a aba "Financeiro". Só o admin lê todos
+ * (payments_admin_read, migração 013); para os demais a lista vem vazia. O banco já
+ * calculou a divisão (anfitrião x plataforma) em cada linha.
+ */
+export async function getAdminPayments(limit = 500): Promise<ServiceResult<FinanceRow[]>> {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('id, status, amount, host_amount, platform_fee, paid_at, created_at, bookings(status, pay_method, properties(title))')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) return toResult<FinanceRow[]>(null, error);
+  return { data: ((data ?? []) as unknown as Record<string, unknown>[]).map(toFinanceRow), error: null };
 }
 
 export async function getPendingProperties(): Promise<ServiceResult<Property[]>> {
@@ -151,4 +167,17 @@ export async function getTopProperties(limit = 5): Promise<ServiceResult<Propert
     .order('rating', { ascending: false })
     .limit(limit);
   return toResult(data, error);
+}
+
+/** Datas de criação das reservas dos últimos `days` dias, para o gráfico do painel (só o admin lê todas). */
+export async function getRecentBookingDates(days = 7): Promise<ServiceResult<string[]>> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('created_at')
+    .gte('created_at', since.toISOString())
+    .limit(2000);
+  if (error) return toResult<string[]>(null, error);
+  return { data: ((data ?? []) as { created_at: string }[]).map((r) => r.created_at), error: null };
 }

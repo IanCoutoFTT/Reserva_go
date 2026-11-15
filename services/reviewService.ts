@@ -43,3 +43,16 @@ export async function hasReviewed(guestId: string, bookingId: string): Promise<S
   if (error) return toResult<boolean>(null, error);
   return { data: data !== null, error: null };
 }
+
+/**
+ * O anfitrião responde (ou corrige em até 24h) uma avaliação da própria cabana, pela função
+ * reply_to_review (migração 020), que confere o dono. A mensagem de regra do banco
+ * (check_violation) já é em português; qualquer outro erro vira texto genérico.
+ */
+export async function replyToReview(reviewId: string, reply: string): Promise<ServiceResult<true>> {
+  const { error } = await supabase.rpc('reply_to_review', { p_review_id: reviewId, p_reply: reply });
+  if (error) {
+    return { data: null, error: error.code === '23514' ? error.message : 'Não foi possível enviar a resposta agora. Tente novamente.' };
+  }
+  return { data: true, error: null };
+}

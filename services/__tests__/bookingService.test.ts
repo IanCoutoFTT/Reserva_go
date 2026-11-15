@@ -30,12 +30,29 @@ beforeEach(() => {
 });
 
 describe('bookingService.checkAvailability', () => {
-  it('chama o RPC is_property_available com os parâmetros certos - não reimplementa a lógica de sobreposição no client', async () => {
+  it('se o banco ainda não tem is_property_free (migração 021), cai na is_property_available e a reserva segue funcionando', async () => {
+    mockRpc
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.is_property_free' } })
+      .mockResolvedValueOnce({ data: true, error: null });
+
+    const result = await checkAvailability('prop-1', '2026-09-10', '2026-09-12');
+
+    expect(mockRpc).toHaveBeenNthCalledWith(1, 'is_property_free', expect.any(Object));
+    expect(mockRpc).toHaveBeenNthCalledWith(2, 'is_property_available', expect.any(Object));
+    expect(result).toEqual({ data: true, error: null });
+  });
+
+  it('data bloqueada pelo anfitrião: is_property_free devolve false e isso chega à tela', async () => {
+    mockRpc.mockResolvedValue({ data: false, error: null });
+    expect(await checkAvailability('prop-1', '2026-09-10', '2026-09-12')).toEqual({ data: false, error: null });
+  });
+
+  it('chama o RPC is_property_free (livre de reservas e bloqueios) com os parâmetros certos - não reimplementa a lógica de sobreposição no client', async () => {
     mockRpc.mockResolvedValue({ data: true, error: null });
 
     const result = await checkAvailability('prop-1', '2026-09-10', '2026-09-12', 'booking-x');
 
-    expect(mockRpc).toHaveBeenCalledWith('is_property_available', {
+    expect(mockRpc).toHaveBeenCalledWith('is_property_free', {
       p_property_id: 'prop-1',
       p_check_in: '2026-09-10',
       p_check_out: '2026-09-12',
@@ -51,7 +68,7 @@ describe('bookingService.checkAvailability', () => {
     await checkAvailability('prop-1', '2026-09-10', '2026-09-12');
 
     expect(mockRpc).toHaveBeenCalledWith(
-      'is_property_available',
+      'is_property_free',
       expect.objectContaining({ p_exclude_booking_id: null })
     );
   });

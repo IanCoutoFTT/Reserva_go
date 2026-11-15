@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
@@ -42,6 +42,12 @@
         "expo-image-picker",
         {
           "photosPermission": "O ReservaGO precisa acessar suas fotos para você escolher a foto de perfil e as fotos da sua cabana."
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "enableGooglePay": false
         }
       ]
     ],

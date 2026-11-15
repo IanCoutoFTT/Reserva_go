@@ -27,6 +27,9 @@ export type PixErrorCode =
   | 'booking_not_found'
   | 'booking_not_active'
   | 'booking_not_pix'
+  | 'booking_not_card'
+  | 'card_not_configured'
+  | 'payment_not_payable'
   | 'provider_error'
   | 'charge_not_registered'
   | 'unauthorized'
@@ -43,6 +46,9 @@ const MESSAGES: Record<PixErrorCode, string> = {
   booking_not_found: 'Reserva não encontrada.',
   booking_not_active: 'Essa reserva não está mais ativa.',
   booking_not_pix: 'Essa reserva não é para pagar com Pix.',
+  booking_not_card: 'Essa reserva não é para pagar com cartão.',
+  card_not_configured: 'O pagamento no cartão não está disponível agora. Escolha o Pix ou tente mais tarde.',
+  payment_not_payable: 'Essa cobrança não aceita mais pagamento. Veja o status em Minhas Viagens.',
   provider_error: 'O serviço de pagamento está indisponível agora. Tente de novo em instantes.',
   charge_not_registered: 'Não foi possível registrar a cobrança. Tente novamente.',
   unauthorized: 'Entre na sua conta para pagar.',
@@ -78,6 +84,27 @@ export async function createPixCharge(bookingId: string, cpf?: string): Promise<
   const payment = (data as { payment?: Payment } | null)?.payment;
   if (!payment) return { data: null, error: MESSAGES.unknown, code: 'unknown' };
   return { data: payment, error: null, code: null };
+}
+
+export interface CardIntent {
+  payment: Payment;
+  /** Segredo da cobrança na Stripe: só serve para abrir a tela de pagamento dela. Nunca é guardado. */
+  clientSecret: string;
+}
+
+/**
+ * Cria a cobrança de CARTÃO da reserva (ou reabre a que já está aberta) e devolve o
+ * client_secret para abrir a tela de pagamento da Stripe. O valor vem da reserva no
+ * banco; o app só informa qual reserva. O número do cartão vai direto à Stripe.
+ */
+export async function createCardIntent(bookingId: string): Promise<PixResult<CardIntent>> {
+  const { data, code } = await invoke('card-create-intent', { booking_id: bookingId });
+  if (code) return { data: null, error: MESSAGES[code], code };
+  const body = data as { payment?: Payment; client_secret?: unknown } | null;
+  if (!body?.payment || typeof body.client_secret !== 'string' || !body.client_secret) {
+    return { data: null, error: MESSAGES.unknown, code: 'unknown' };
+  }
+  return { data: { payment: body.payment, clientSecret: body.client_secret }, error: null, code: null };
 }
 
 /** Só no modo simulado (teste): o hóspede "paga" a própria cobrança. */

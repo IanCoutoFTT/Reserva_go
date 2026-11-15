@@ -1,4 +1,5 @@
-import { PIX_ENABLED } from '../lib/pix';
+import { PAYMENTS_ENABLED } from '../lib/card';
+import { isMissingFunction } from './availabilityService';
 import { supabase } from '../lib/supabase';
 import { Booking, BookingForHost, BookingWithProperty, NewBooking, ServiceResult, toResult } from './types';
 
@@ -14,13 +15,21 @@ export async function checkAvailability(
   checkOut: string,
   excludeBookingId?: string
 ): Promise<ServiceResult<boolean>> {
-  const { data, error } = await supabase.rpc('is_property_available', {
+  const args = {
     p_property_id: propertyId,
     p_check_in: checkIn,
     p_check_out: checkOut,
     p_exclude_booking_id: excludeBookingId ?? null,
-  });
-  return toResult(data, error);
+  };
+  // is_property_free (migração 021) também considera os bloqueios do anfitrião. Se o banco ainda
+  // não a tem, cai na verificação de sempre (só reservas) e a reserva segue funcionando.
+  const free = await supabase.rpc('is_property_free', args);
+  if (!free.error) return toResult(free.data, null);
+  if (isMissingFunction(free.error)) {
+    const { data, error } = await supabase.rpc('is_property_available', args);
+    return toResult(data, error);
+  }
+  return toResult<boolean>(null, free.error);
 }
 
 export async function createBooking(dados: NewBooking): Promise<ServiceResult<Booking>> {
@@ -37,7 +46,7 @@ export async function getBookingsByGuest(guestId: string): Promise<ServiceResult
   const { data, error } = await supabase
     .from('bookings')
     // payments só entra com o pagamento ligado: sem a migração 013 a relação não existe.
-    .select(PIX_ENABLED ? '*, properties(title, location, images, owner_id), payments(status, expires_at)' : '*, properties(title, location, images, owner_id)')
+    .select(PAYMENTS_ENABLED ? '*, properties(title, location, images, owner_id), payments(status, expires_at)' : '*, properties(title, location, images, owner_id)')
     .eq('guest_id', guestId)
     .order('check_in', { ascending: false });
   return toResult(data as unknown as BookingWithProperty[] | null, error);
@@ -52,7 +61,7 @@ export async function getBookingsByHost(hostId: string): Promise<ServiceResult<B
   const { data, error } = await supabase
     .from('bookings')
     .select(
-      PIX_ENABLED
+      PAYMENTS_ENABLED
         ? '*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url), payments(status)'
         : '*, properties!inner(title, location, owner_id), guest:profiles!bookings_guest_id_fkey(name, avatar_url)'
     )
@@ -69,4 +78,21 @@ export async function cancelBooking(id: string, reason?: string): Promise<Servic
     .select()
     .single();
   return toResult(data, error);
+}
+
+// Não comparecimento (migração 018): só pelas funções do banco, que conferem o dono da
+// cabana, a data e o estado da reserva. A mensagem de regra (check_violation) já é em
+// português e própria para mostrar; qualquer outro erro vira texto genérico.
+function noShowError(error: { message: string; code?: string }): string {
+  return error.code === '23514' ? error.message : 'Não foi possível registrar agora. Tente novamente.';
+}
+
+export async function markNoShow(bookingId: string): Promise<ServiceResult<true>> {
+  const { error } = await supabase.rpc('mark_no_show', { p_booking_id: bookingId });
+  return error ? { data: null, error: noShowError(error) } : { data: true, error: null };
+}
+
+export async function clearNoShow(bookingId: string): Promise<ServiceResult<true>> {
+  const { error } = await supabase.rpc('clear_no_show', { p_booking_id: bookingId });
+  return error ? { data: null, error: noShowError(error) } : { data: true, error: null };
 }
