@@ -60,11 +60,13 @@ describe('createReportGate', () => {
   it('o mesmo erro não é reenviado dentro de um minuto', () => {
     let t = 1_000;
     const gate = createReportGate(() => t);
-    expect(gate.allow(rep('a'))).toBe(true);
+    // mesmo objeto de erro: o rastreio (e a linha de quem chamou) fica idêntico em qualquer sistema
+    const same = rep('a');
+    expect(gate.allow(same)).toBe(true);
     t += 5_000;
-    expect(gate.allow(rep('a'))).toBe(false);
+    expect(gate.allow(same)).toBe(false);
     t += DEDUPE_MS;
-    expect(gate.allow(rep('a'))).toBe(true);
+    expect(gate.allow(same)).toBe(true);
   });
   it('erros diferentes passam', () => {
     const gate = createReportGate(() => 1);
