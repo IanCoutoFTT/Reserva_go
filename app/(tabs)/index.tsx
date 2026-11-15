@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SkeletonCardList } from '../../components/Skeleton';
 import { PropertyCard } from '../../components/PropertyCard';
 import { FilterModal } from '../../components/explorer/FilterModal';
 import { SearchHeader } from '../../components/explorer/SearchHeader';
@@ -21,6 +22,11 @@ import { mapPropertyToListing } from '../../components/explorer/mapPropertyToLis
 import { useAuth } from '../../context/AuthContext';
 import { Listing, useListings } from '../../context/ListingContext';
 import { getProperties } from '../../services/propertyService';
+import { availablePropertyIds } from '../../services/availabilityService';
+import { DateRangePicker } from '../../components/DateRangePicker';
+import type { Range } from '../../lib/dateRange';
+import { formatBR } from '../../lib/dateRange';
+import { filterByAmenities, searchProperties, toggleAmenity } from '../../lib/search';
 
 type Property = Listing;
 
@@ -104,10 +110,45 @@ export default function HomeScreen() {
   const [tempPriceRange, setTempPriceRange] = useState<PriceRange>(PRICE_RANGES[0]);
   const [tempIsolation, setTempIsolation] = useState<IsolationOption>(ISOLATION_OPTIONS[0]);
 
+  // Comodidades e disponibilidade por data (migração 021).
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [tempAmenities, setTempAmenities] = useState<string[]>([]);
+  const [selectedDates, setSelectedDates] = useState<Range | null>(null);
+  const [tempDates, setTempDates] = useState<Range | null>(null);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [availableIds, setAvailableIds] = useState<Set<string> | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+
   const activeFiltersCount = [
     selectedPriceRange.id !== 'todos',
     selectedIsolation.id !== 'todos',
+    selectedAmenities.length > 0,
+    !!selectedDates,
   ].filter(Boolean).length;
+
+  // Com um período escolhido, pergunta ao banco quais cabanas estão livres (sem reserva e sem
+  // bloqueio do anfitrião). Se a pergunta falhar, a lista não é filtrada e a tela avisa.
+  useEffect(() => {
+    if (!selectedDates) {
+      setAvailableIds(null);
+      setAvailabilityError(null);
+      return;
+    }
+    let cancelled = false;
+    availablePropertyIds(selectedDates.start, selectedDates.end).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data) {
+        setAvailableIds(null);
+        setAvailabilityError(error ?? 'Não foi possível buscar por data agora.');
+      } else {
+        setAvailableIds(new Set(data));
+        setAvailabilityError(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDates, reloadKey]);
 
   // useFocusEffect (não useEffect): a aba Explorar continua montada por baixo
   // quando outra tela (ex.: detalhes) é aberta por cima. Com useEffect, o botão
@@ -138,28 +179,38 @@ export default function HomeScreen() {
   const openFilterModal = () => {
     setTempPriceRange(selectedPriceRange);
     setTempIsolation(selectedIsolation);
+    setTempAmenities(selectedAmenities);
+    setTempDates(selectedDates);
     setFilterModalVisible(true);
   };
 
   const applyFilters = () => {
     setSelectedPriceRange(tempPriceRange);
     setSelectedIsolation(tempIsolation);
+    setSelectedAmenities(tempAmenities);
+    setSelectedDates(tempDates);
     setFilterModalVisible(false);
   };
 
   const clearFilters = () => {
     setTempPriceRange(PRICE_RANGES[0]);
     setTempIsolation(ISOLATION_OPTIONS[0]);
+    setTempAmenities([]);
+    setTempDates(null);
   };
 
   const applyActiveFilters = (list: Property[]) =>
-    list.filter((item) => {
-      const passPrice = item.price >= selectedPriceRange.min && item.price <= selectedPriceRange.max;
-      const passIsolation =
-        selectedIsolation.id === 'todos' ||
-        (item.isolationLevel ?? '').toLowerCase() === selectedIsolation.id.toLowerCase();
-      return passPrice && passIsolation;
-    });
+    filterByAmenities(
+      list.filter((item) => {
+        const passPrice = item.price >= selectedPriceRange.min && item.price <= selectedPriceRange.max;
+        const passIsolation =
+          selectedIsolation.id === 'todos' ||
+          (item.isolationLevel ?? '').toLowerCase() === selectedIsolation.id.toLowerCase();
+        const passDates = !availableIds || availableIds.has(item.id);
+        return passPrice && passIsolation && passDates;
+      }),
+      selectedAmenities
+    );
 
   const navigateToDetails = (item: Property) => {
     router.push({
@@ -177,24 +228,17 @@ export default function HomeScreen() {
     });
   };
 
+  // Busca sem acento e com várias palavras (lib/search.ts); o resultado vem do mais relevante ao menos.
   const searchResults = useMemo(
-    () =>
-      applyActiveFilters(
-        allProperties.filter((item) => {
-          if (!searchQuery.trim()) return false;
-          const query = searchQuery.toLowerCase().trim();
-          return (
-            item.title?.toLowerCase().includes(query) ||
-            item.location?.toLowerCase().includes(query)
-          );
-        })
-      ),
-    [allProperties, searchQuery, selectedPriceRange, selectedIsolation]
+    () => applyActiveFilters(searchProperties(allProperties, searchQuery)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allProperties, searchQuery, selectedPriceRange, selectedIsolation, selectedAmenities, availableIds]
   );
 
   const exploreAllResults = useMemo(
     () => applyActiveFilters(allProperties.filter((item) => item.category === selectedCategory)),
-    [allProperties, selectedCategory, selectedPriceRange, selectedIsolation]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allProperties, selectedCategory, selectedPriceRange, selectedIsolation, selectedAmenities, availableIds]
   );
 
   const renderSection = (title: string, subCategoryName: string) => {
@@ -246,6 +290,30 @@ export default function HomeScreen() {
         selectedCategory={selectedCategory}
         onSelectCategory={selectCategory}
       />
+
+      {(selectedDates || selectedAmenities.length > 0) && (
+        <View style={styles.activeBar} testID="active-filters-bar">
+          <Text style={styles.activeBarText} numberOfLines={2}>
+            {selectedDates ? `Livres de ${formatBR(selectedDates.start)} a ${formatBR(selectedDates.end)}` : ''}
+            {selectedDates && selectedAmenities.length > 0 ? ' · ' : ''}
+            {selectedAmenities.length > 0 ? selectedAmenities.join(', ') : ''}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedDates(null);
+              setSelectedAmenities([]);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Remover filtros de data e comodidades"
+            hitSlop={8}
+          >
+            <Text style={styles.activeBarClear}>Limpar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {!!selectedDates && !!availabilityError && (
+        <Text style={styles.availabilityError}>{availabilityError}</Text>
+      )}
 
       {isSearching ? (
         <View style={{ flex: 1, backgroundColor: '#FAFAFA' }}>
@@ -310,9 +378,7 @@ export default function HomeScreen() {
           )}
         </View>
       ) : loadingProperties ? (
-        <View style={styles.searchHint}>
-          <ActivityIndicator size="large" color="#2D5A27" />
-        </View>
+        <SkeletonCardList count={3} testID="explore-loading" />
       ) : allProperties.length === 0 ? (
         <View style={styles.searchHint}>
           <Text style={styles.searchHintText}>
@@ -349,6 +415,32 @@ export default function HomeScreen() {
         onChangeIsolation={setTempIsolation}
         onClear={clearFilters}
         onApply={applyFilters}
+        tempAmenities={tempAmenities}
+        onToggleAmenity={(a) => setTempAmenities((cur) => toggleAmenity(cur, a))}
+        tempDates={tempDates}
+        onPickDates={() => {
+          // Fecha os filtros enquanto o calendário está aberto (dois modais juntos pesam no Android).
+          setFilterModalVisible(false);
+          setDatePickerVisible(true);
+        }}
+        onClearDates={() => setTempDates(null)}
+      />
+
+      <DateRangePicker
+        visible={datePickerVisible}
+        title="Quando você quer ficar?"
+        onClose={() => {
+          setDatePickerVisible(false);
+          setFilterModalVisible(true);
+        }}
+        onConfirm={(range) => {
+          setTempDates(range);
+          setDatePickerVisible(false);
+          setFilterModalVisible(true);
+        }}
+        initial={tempDates ?? undefined}
+        maxNights={60}
+        confirmLabel="Usar este período"
       />
     </View>
   );
@@ -369,6 +461,10 @@ const styles = StyleSheet.create({
   seeAllText: { fontWeight: '600', color: '#374151' },
   searchResults: { padding: 20, paddingBottom: 100 },
   searchHint: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  activeBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, backgroundColor: '#F0F7F0', paddingHorizontal: 20, paddingVertical: 10 },
+  activeBarText: { flex: 1, color: '#2D5A27', fontSize: 13, fontWeight: '600' },
+  activeBarClear: { color: '#DC2626', fontWeight: '700', fontSize: 13 },
+  availabilityError: { color: '#B45309', backgroundColor: '#FFFBEB', fontSize: 12, paddingHorizontal: 20, paddingVertical: 8 },
   searchHintText: { fontSize: 15, color: '#9CA3AF', textAlign: 'center', lineHeight: 22 },
   exploreAllHeader: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20,

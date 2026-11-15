@@ -19,6 +19,9 @@ export interface AppNotification {
   body: string;
   time: string;
   read: boolean;
+  /** Para onde levar ao tocar (lib/notificationTarget.ts). Só as notificações vindas do banco trazem. */
+  propertyId?: string | null;
+  bookingId?: string | null;
 }
 
 interface NotificationContextData {
@@ -125,6 +128,8 @@ function mapNotification(n: DbNotification): AppNotification {
     body: n.body,
     time: formatRelativeTime(n.created_at),
     read: n.read,
+    propertyId: n.property_id,
+    bookingId: n.booking_id,
   };
 }
 

@@ -13,7 +13,12 @@ export type MenuItemProps = {
 
 export function MenuItem({ icon: Icon, title, subtitle, onPress, color = '#4B5563', showBadge = false }: MenuItemProps) {
   return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.menuItem}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
+    >
       <View style={styles.menuIconContainer}>
         <Icon size={22} color={color} />
         {showBadge && <View style={styles.notificationBadge} />}

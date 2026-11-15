@@ -16,6 +16,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { InfoModal } from '../components/profile/InfoModal';
+import { LEGAL_CONTACT, LEGAL_UPDATED, PRIVACY_SECTIONS, TERMS_SECTIONS } from '../components/profile/profileContent';
 import { KEEP_SIGNED_IN_KEY, useAuth } from '../context/AuthContext';
 import { installCryptoSubtlePolyfillIfNeeded } from '../lib/cryptoPolyfill';
 import { supabase } from '../lib/supabase';
@@ -27,6 +29,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -188,6 +192,13 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
+            <Text style={styles.consent}>
+              Ao continuar, você concorda com os{' '}
+              <Text style={styles.consentLink} onPress={() => setTermsOpen(true)}>Termos de Serviço</Text>
+              {' '}e com a{' '}
+              <Text style={styles.consentLink} onPress={() => setPrivacyOpen(true)}>Política de Privacidade</Text>.
+            </Text>
+
             {__DEV__ && (
               <>
                 <Text style={styles.devDivider}>— apenas em desenvolvimento —</Text>
@@ -238,6 +249,23 @@ export default function LoginScreen() {
 
         </View>
       </KeyboardAvoidingView>
+
+      <InfoModal
+        visible={privacyOpen}
+        onClose={() => setPrivacyOpen(false)}
+        title="Política de Privacidade"
+        subtitle="Como tratamos seus dados"
+        sections={PRIVACY_SECTIONS}
+        footerText={`Última revisão: ${LEGAL_UPDATED} · Elaborada com base na LGPD (Lei nº 13.709/2018)`}
+      />
+      <InfoModal
+        visible={termsOpen}
+        onClose={() => setTermsOpen(false)}
+        title="Termos de Serviço"
+        subtitle="Regras do ReservaGO"
+        sections={TERMS_SECTIONS}
+        footerText={`Última revisão: ${LEGAL_UPDATED}. Dúvidas? Fale com ${LEGAL_CONTACT}.`}
+      />
     </SafeAreaView>
   );
 }
@@ -255,6 +283,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   googleText: { fontSize: 16, fontWeight: 'bold', color: '#1F2937' },
+  consent: { textAlign: 'center', color: '#6B7280', fontSize: 12, lineHeight: 18, paddingHorizontal: 8 },
+  consentLink: { color: '#2D5A27', fontWeight: '700', textDecorationLine: 'underline' },
   devDivider: { textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginTop: 5 },
   input: {
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 15,

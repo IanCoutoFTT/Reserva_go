@@ -7,9 +7,16 @@ import {
   Platform, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Mail, ChevronRight, Send, X, ShieldCheck, Plus, MessageCircle } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Mail, ChevronRight, Send, X, ShieldCheck, Plus, MessageCircle, ImagePlus } from 'lucide-react-native';
+import { ChatImage } from '../../components/ChatImage';
+import { SkeletonRowList } from '../../components/Skeleton';
+import { isDefaultCaption, photoCaption, validateChatImage } from '../../lib/chatImage';
+import { sendImageMessage } from '../../services/chatImageService';
 import { useAuth } from '../../context/AuthContext';
 import { useOnAppActive } from '../../lib/useOnAppActive';
+import { rateLimitMessage } from '../../lib/rateLimit';
+import { useTypingIndicator } from '../../lib/useTypingIndicator';
 import { useNotifications } from '../../context/NotificationContext';
 import { getBookingsByGuest } from '../../services/bookingService';
 import {
@@ -30,6 +37,8 @@ type Message = {
   id: string;
   from: 'me' | 'them';
   text: string;
+  /** Foto da mensagem (migração 023): caminho no bucket privado chat-images. */
+  imagePath?: string | null;
 };
 
 type Chat = {
@@ -157,7 +166,7 @@ function mapConversation(
 }
 
 function mapMessage(m: DbMessage, userId: string): Message {
-  return { id: m.id, from: m.sender_id === userId ? 'me' : 'them', text: m.content };
+  return { id: m.id, from: m.sender_id === userId ? 'me' : 'them', text: m.content, imagePath: m.image_path ?? null };
 }
 
 export default function MessagesScreen() {
@@ -203,6 +212,11 @@ export default function MessagesScreen() {
   const messagesScrollRef = useRef<ScrollView>(null);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
   const [inputText, setInputText] = useState('');
+  // Foto escolhida, ainda não enviada (migração 023): aparece como prévia acima do campo de texto.
+  const [pendingImage, setPendingImage] = useState<{ uri: string; fileSize?: number | null } | null>(null);
+  const [sendingImage, setSendingImage] = useState(false);
+  // "digitando..." da outra pessoa e aviso de que EU estou digitando (canal de broadcast, nada gravado).
+  const { otherTyping, notifyTyping } = useTypingIndicator(activeChat?.isReal ? activeChat.id : null, user?.id ?? null);
   const activeChatIdRef = useRef<string | null>(null);
   const autoOpenedIdRef = useRef<string | null>(null);
   const autoOpenRetriedRef = useRef<string | null>(null);
@@ -505,7 +519,55 @@ export default function MessagesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openConversationId, chats, isConnected]);
 
+  // Escolhe a foto na galeria (qualidade reduzida para ficar dentro dos 3 MB) e mostra a prévia.
+  const pickChatImage = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permissão necessária', 'Permita o acesso à galeria para enviar fotos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.6 });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const invalid = validateChatImage({ uri: asset.uri, fileSize: asset.fileSize });
+    if (invalid) {
+      Alert.alert('Foto não enviada', invalid);
+      return;
+    }
+    setPendingImage({ uri: asset.uri, fileSize: asset.fileSize });
+  };
+
+  const sendPendingImage = async () => {
+    if (!pendingImage || !activeChat || !user?.id || sendingImage) return;
+    const caption = inputText.trim();
+    setSendingImage(true);
+    const { data, error } = await sendImageMessage({
+      conversationId: activeChat.id,
+      senderId: user.id,
+      uri: pendingImage.uri,
+      fileSize: pendingImage.fileSize,
+      caption,
+    });
+    setSendingImage(false);
+    if (error || !data) {
+      Alert.alert('Foto não enviada', rateLimitMessage(error) ?? error ?? 'Não foi possível enviar a foto agora. Tente novamente.');
+      return; // mantém a prévia e a legenda para tentar de novo
+    }
+    setPendingImage(null);
+    setInputText('');
+    setActiveChat((prev) => {
+      if (!prev || prev.id !== activeChat.id) return prev;
+      if (prev.messages.some((m) => m.id === data.id)) return prev; // já chegou via Realtime
+      return { ...prev, messages: [...prev.messages, mapMessage(data, user.id)] };
+    });
+  };
+
   const sendMessage = () => {
+    // Com foto escolhida, o botão de enviar manda a foto (com a legenda digitada, se houver).
+    if (pendingImage && activeChat?.isReal && user?.id) {
+      void sendPendingImage();
+      return;
+    }
     const text = inputText.trim();
     if (!text || !activeChat) return;
 
@@ -538,7 +600,7 @@ export default function MessagesScreen() {
           console.log('[messages] sendMessage falhou ->', error);
           // Devolve o texto pro campo (antes a mensagem sumia sem nenhum aviso).
           setInputText((current) => current || text);
-          Alert.alert('Mensagem não enviada', 'Não foi possível enviar agora. Verifique sua conexão e tente de novo.');
+          Alert.alert('Mensagem não enviada', rateLimitMessage(error) ?? 'Não foi possível enviar agora. Verifique sua conexão e tente de novo.');
           return;
         }
         setActiveChat((prev) => {
@@ -571,9 +633,7 @@ export default function MessagesScreen() {
           </TouchableOpacity>
         </View>
       ) : loading ? (
-        <View style={styles.emptyContainer}>
-          <ActivityIndicator size="large" color="#2D5A27" />
-        </View>
+        <SkeletonRowList count={5} testID="messages-loading" />
       ) : loadError ? (
         <View style={styles.emptyContainer}>
           <Mail size={48} color="#E5E7EB" />
@@ -664,23 +724,58 @@ export default function MessagesScreen() {
                 key={msg.id}
                 style={[styles.bubble, msg.from === 'me' ? styles.bubbleMe : styles.bubbleThem]}
               >
-                <Text style={msg.from === 'me' ? styles.bubbleTextMe : styles.bubbleTextThem}>
-                  {msg.text}
-                </Text>
+                {!!msg.imagePath && <ChatImage path={msg.imagePath} />}
+                {(!msg.imagePath || !isDefaultCaption(msg.text)) && (
+                  <Text style={[msg.from === 'me' ? styles.bubbleTextMe : styles.bubbleTextThem, !!msg.imagePath && { marginTop: 6 }]}>
+                    {msg.text}
+                  </Text>
+                )}
               </View>
             ))}
           </ScrollView>
 
+          {otherTyping && (
+            <Text style={styles.typingLine} accessibilityLiveRegion="polite" testID="typing-indicator">
+              {activeChat?.hostName ?? 'A outra pessoa'} está digitando...
+            </Text>
+          )}
+
+          {!!pendingImage && (
+            <View style={styles.pendingImageRow} testID="pending-image">
+              <Image source={{ uri: pendingImage.uri }} style={styles.pendingImageThumb} />
+              <Text style={styles.pendingImageText} numberOfLines={1}>Foto pronta para enviar. Escreva uma legenda se quiser.</Text>
+              <TouchableOpacity onPress={() => setPendingImage(null)} disabled={sendingImage} accessibilityRole="button" accessibilityLabel="Remover foto" hitSlop={10} testID="pending-image-remove">
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={[styles.inputBar, { paddingBottom: keyboardOpen ? 12 : insets.bottom + 12 }]}>
+            {!!activeChat?.isReal && (
+              <TouchableOpacity
+                style={styles.attachBtn}
+                onPress={pickChatImage}
+                disabled={sendingImage}
+                accessibilityRole="button"
+                accessibilityLabel="Enviar uma foto"
+                testID="attach-photo"
+              >
+                <ImagePlus size={22} color="#2D5A27" />
+              </TouchableOpacity>
+            )}
             <TextInput
               style={styles.messageInput}
               placeholder="Digite uma mensagem..."
               value={inputText}
-              onChangeText={setInputText}
+              onChangeText={(t) => {
+                setInputText(t);
+                if (t.length > 0) notifyTyping();
+              }}
               multiline
+              accessibilityLabel="Mensagem"
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-              <Send size={20} color="#fff" />
+            <TouchableOpacity style={[styles.sendBtn, sendingImage && { opacity: 0.6 }]} onPress={sendMessage} disabled={sendingImage} accessibilityRole="button" accessibilityLabel="Enviar mensagem">
+              {sendingImage ? <ActivityIndicator size="small" color="#fff" /> : <Send size={20} color="#fff" />}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -785,6 +880,11 @@ const styles = StyleSheet.create({
   },
   chatContent: { flex: 1 },
   chatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  pendingImageRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
+  pendingImageThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#E5E7EB' },
+  pendingImageText: { flex: 1, fontSize: 12, color: '#6B7280' },
+  attachBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F7F0', marginRight: 8 },
+  typingLine: { paddingHorizontal: 20, paddingBottom: 6, fontSize: 12, color: '#6B7280', fontStyle: 'italic' },
   hostName: { fontSize: 15, fontWeight: 'bold', color: '#1F2937' },
   time: { fontSize: 12, color: '#9CA3AF' },
   message: { fontSize: 14, color: '#6B7280' },

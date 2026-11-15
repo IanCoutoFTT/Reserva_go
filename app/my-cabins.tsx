@@ -5,11 +5,12 @@ import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, Touchabl
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { Listing, useListings } from '../context/ListingContext';
+import { BlockDatesModal } from '../components/BlockDatesModal';
 import { PropertyImage } from '../components/PropertyImage';
-import { effectiveStatus } from '../lib/booking';
+import { canClearNoShow, canMarkNoShow, effectiveStatus, hostPaymentLabel, isNoShow } from '../lib/booking';
 import { formatCurrency } from '../lib/format';
 import { paymentStatusOf } from '../lib/pix';
-import { getBookingsByHost } from '../services/bookingService';
+import { clearNoShow, getBookingsByHost, markNoShow } from '../services/bookingService';
 import { deleteProperty, getPropertiesByHost } from '../services/propertyService';
 import type { BookingForHost, CabinStatus, Property as DbProperty } from '../services/types';
 
@@ -53,6 +54,8 @@ const BOOKING_STATUS_LABELS = {
   realizada: { label: 'Realizada', color: '#374151', bg: '#F3F4F6' },
   cancelada: { label: 'Cancelada', color: '#991B1B', bg: '#FEE2E2' },
 } as const;
+
+const NO_SHOW_LABEL = { label: 'Não compareceu', color: '#92400E', bg: '#FEF3C7' } as const;
 
 export default function MyCabinsScreen() {
   const router = useRouter();
@@ -102,6 +105,46 @@ export default function MyCabinsScreen() {
   // para usuário real - o estático não existe no banco e segue com o cálculo local.
   const [hostBookings, setHostBookings] = useState<BookingForHost[] | null>(null);
   const [bookingsError, setBookingsError] = useState(false);
+  // Não comparecimento (migração 018): recarrega a lista depois de marcar ou desfazer.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [noShowBusyId, setNoShowBusyId] = useState<string | null>(null);
+  // Calendário de bloqueio (migração 021): cabana cujo modal está aberto.
+  const [blockingCabin, setBlockingCabin] = useState<{ id: string; title: string } | null>(null);
+
+  const handleMarkNoShow = (b: BookingForHost) => {
+    Alert.alert(
+      'Hóspede não compareceu?',
+      `Confirma que ${b.guest?.name ?? 'o hóspede'} não compareceu à reserva de ${isoToBR(b.check_in)} a ${isoToBR(b.check_out)}? O hóspede será avisado e a reserva não poderá ser avaliada. O pagamento não é devolvido automaticamente.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          style: 'destructive',
+          onPress: async () => {
+            setNoShowBusyId(b.id);
+            const { error } = await markNoShow(b.id);
+            setNoShowBusyId(null);
+            if (error) {
+              Alert.alert('Não foi possível registrar', error);
+              return;
+            }
+            setReloadKey((k) => k + 1);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearNoShow = async (b: BookingForHost) => {
+    setNoShowBusyId(b.id);
+    const { error } = await clearNoShow(b.id);
+    setNoShowBusyId(null);
+    if (error) {
+      Alert.alert('Não foi possível desfazer', error);
+      return;
+    }
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     if (isStaticUser || !user?.id) {
@@ -123,7 +166,7 @@ export default function MyCabinsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isStaticUser, user?.id]);
+  }, [isStaticUser, user?.id, reloadKey]);
 
   // Com reservas reais, os números vêm delas (valor gravado, sem cancelamentos).
   // Sem elas (estático / falha), mantém a estimativa antiga preço × reservas.
@@ -261,10 +304,21 @@ export default function MyCabinsScreen() {
             </View>
 
             <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => handleEdit(cabin)}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleEdit(cabin)} accessibilityRole="button" accessibilityLabel={`Editar ${cabin.title}`}>
                 <Edit size={18} color="#4B5563" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(cabin.id, cabin.title)}>
+              {!isStaticUser && !!user?.id && cabin.status !== undefined && (
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => setBlockingCabin({ id: cabin.id, title: cabin.title })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Bloquear datas de ${cabin.title}`}
+                  testID={`block-dates-${cabin.id}`}
+                >
+                  <CalendarDays size={18} color="#2D5A27" />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(cabin.id, cabin.title)} accessibilityRole="button" accessibilityLabel={`Excluir ${cabin.title}`}>
                 <Trash2 size={18} color="#EF4444" />
               </TouchableOpacity>
             </View>
@@ -286,7 +340,9 @@ export default function MyCabinsScreen() {
             )}
 
             {(hostBookings ?? []).map((b) => {
-              const status = BOOKING_STATUS_LABELS[effectiveStatus(b)];
+              const noShow = isNoShow(b);
+              const payLabel = hostPaymentLabel({ status: b.status, paymentStatus: paymentStatusOf(b.payments), paymentRequired: b.payment_required });
+              const status = noShow ? NO_SHOW_LABEL : BOOKING_STATUS_LABELS[effectiveStatus(b)];
               return (
                 <View key={b.id} style={styles.hostBookingCard}>
                   <View style={styles.hostBookingTop}>
@@ -301,9 +357,26 @@ export default function MyCabinsScreen() {
                   </Text>
                   <Text style={styles.hostBookingTotal}>
                     {b.pay_method === 'pix' ? 'PIX' : 'Cartão'} · {formatCurrency(Number(b.total))}
-                    {b.pay_method === 'pix' && paymentStatusOf(b.payments) === 'pago' ? ' · Pago' : ''}
-                    {b.pay_method === 'pix' && paymentStatusOf(b.payments) === 'aguardando' ? ' · Aguardando pagamento' : ''}
+                    {payLabel ? ` · ${payLabel}` : ''}
                   </Text>
+                  {canMarkNoShow(b) && (
+                    <TouchableOpacity style={styles.noShowBtn} onPress={() => handleMarkNoShow(b)} disabled={noShowBusyId === b.id}>
+                      {noShowBusyId === b.id ? (
+                        <ActivityIndicator size="small" color="#92400E" />
+                      ) : (
+                        <Text style={styles.noShowBtnText}>Hóspede não compareceu</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {noShow && canClearNoShow(b) && (
+                    <TouchableOpacity style={styles.noShowBtn} onPress={() => handleClearNoShow(b)} disabled={noShowBusyId === b.id}>
+                      {noShowBusyId === b.id ? (
+                        <ActivityIndicator size="small" color="#92400E" />
+                      ) : (
+                        <Text style={styles.noShowBtnText}>Desfazer marcação</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })}
@@ -311,7 +384,17 @@ export default function MyCabinsScreen() {
         )}
       </ScrollView>
 
-      <TouchableOpacity 
+      {blockingCabin && !!user?.id && (
+        <BlockDatesModal
+          visible
+          propertyId={blockingCabin.id}
+          propertyTitle={blockingCabin.title}
+          userId={user.id}
+          onClose={() => setBlockingCabin(null)}
+        />
+      )}
+
+      <TouchableOpacity
         style={[styles.fab, { bottom: 16 + insets.bottom }]}
         activeOpacity={0.8}
         onPress={() => router.push('/create-listing')}
@@ -353,6 +436,8 @@ const styles = StyleSheet.create({
   hostBookingCabin: { fontSize: 13, color: '#4B5563', marginTop: 4 },
   hostBookingMeta: { fontSize: 12, color: '#6B7280', marginTop: 4 },
   hostBookingTotal: { fontSize: 13, fontWeight: '600', color: '#2D5A27', marginTop: 4 },
+  noShowBtn: { marginTop: 10, alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', borderWidth: 1, borderColor: '#F59E0B', backgroundColor: '#FFFBEB', borderRadius: 10, paddingHorizontal: 14 },
+  noShowBtnText: { color: '#92400E', fontSize: 13, fontWeight: '700' },
   actionButtons: { justifyContent: 'center', padding: 10, borderLeftWidth: 1, borderLeftColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
   actionBtn: { padding: 10, marginVertical: 4, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB' },
   fab: { position: 'absolute', bottom: 30, right: 20, backgroundColor: '#2D5A27', flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 5 },

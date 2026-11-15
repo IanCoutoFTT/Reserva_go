@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  ScrollView, Alert,
+  ScrollView, Alert, Share,
 } from 'react-native';
 import {
   User, Settings, Bell, ShieldCheck, LogOut,
-  LogIn, LayoutDashboard, Home, FileText, Trash2, Wallet,
+  LogIn, LayoutDashboard, Home, FileText, Trash2, Wallet, Download,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -15,12 +15,14 @@ import { MenuItem } from '../../components/profile/MenuItem';
 import { InfoModal } from '../../components/profile/InfoModal';
 import { EditProfileModal } from '../../components/profile/EditProfileModal';
 import { GuestDashboard, PastTrip } from '../../components/profile/GuestDashboard';
-import { PRIVACY_SECTIONS, TERMS_SECTIONS } from '../../components/profile/profileContent';
+import { LEGAL_CONTACT, LEGAL_UPDATED, PRIVACY_SECTIONS, TERMS_SECTIONS } from '../../components/profile/profileContent';
 import { updateProfile, uploadAvatar } from '../../services/profileService';
 import { getBookingsByGuest } from '../../services/bookingService';
 import { effectiveStatus } from '../../lib/booking';
-import { PIX_ENABLED } from '../../lib/pix';
+import { PAYMENTS_ENABLED } from '../../lib/card';
 import { getReviewCountByAuthor } from '../../services/reviewService';
+import { exportMyData } from '../../services/dataExportService';
+import { dataExportTitle } from '../../lib/dataExport';
 
 const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=11';
 
@@ -40,6 +42,7 @@ export default function ProfileScreen() {
   const [isPrivacyVisible, setPrivacyVisible] = useState(false);
   const [isTermsVisible, setTermsVisible] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
 
   // Estado "confirmado" (o que está de fato salvo) vem direto de `user` -
   // sem cópia local duplicada, pra nunca mostrar um dado editado que não foi
@@ -57,6 +60,36 @@ export default function ProfileScreen() {
   const [guestPastTrips, setGuestPastTrips] = useState<PastTrip[]>([]);
 
   const isStaticUser = !!user?.id.startsWith('static-');
+
+  // LGPD (acesso e portabilidade): reúne os dados do próprio usuário e abre o
+  // compartilhamento do Android. Só lê; nada é enviado a ninguém sem a pessoa escolher.
+  const handleExportData = () => {
+    if (!user || isStaticUser || exportingData) return;
+    Alert.alert(
+      'Baixar meus dados',
+      'Vamos reunir uma cópia dos seus dados (perfil, reservas, pagamentos, avaliações, favoritos, notificações e as mensagens que você enviou). CPF e chave Pix saem mascarados. Depois você escolhe onde salvar ou enviar o arquivo.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Gerar arquivo',
+          onPress: async () => {
+            setExportingData(true);
+            const { data, error } = await exportMyData(user.id);
+            setExportingData(false);
+            if (error || !data) {
+              Alert.alert('Erro', error ?? 'Não foi possível gerar o arquivo agora.');
+              return;
+            }
+            try {
+              await Share.share({ title: dataExportTitle(), message: JSON.stringify(data, null, 2) });
+            } catch {
+              Alert.alert('Erro', 'Não foi possível abrir o compartilhamento. Tente novamente.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Estatísticas reais do hóspede (RF-008 / item 4 do backlog perfil+admin) -
   // não roda pro usuário estático de dev (não tem bookings/reviews de
@@ -247,7 +280,7 @@ export default function ProfileScreen() {
               subtitle="Ver reservas e editar anúncios"
               onPress={() => router.push('../my-cabins')}
             />
-            {PIX_ENABLED && (
+            {PAYMENTS_ENABLED && (
               <MenuItem
                 icon={Wallet}
                 title="Dados para receber"
@@ -303,6 +336,14 @@ export default function ProfileScreen() {
             subtitle="Coleta de dados e visibilidade"
             onPress={() => setPrivacyVisible(true)}
           />
+          {!isStaticUser && (
+            <MenuItem
+              icon={Download}
+              title="Baixar meus dados"
+              subtitle={exportingData ? 'Reunindo seus dados...' : 'Cópia dos seus dados pessoais (LGPD)'}
+              onPress={handleExportData}
+            />
+          )}
           <MenuItem
             icon={FileText}
             title="Termos de Serviço"
@@ -346,7 +387,7 @@ export default function ProfileScreen() {
         title="Privacidade"
         subtitle="Como protegemos seus dados"
         sections={PRIVACY_SECTIONS}
-        footerText="Última atualização: Janeiro de 2025 · Em conformidade com a LGPD (Lei nº 13.709/2018)"
+        footerText={`Última revisão: ${LEGAL_UPDATED} · Elaborada com base na LGPD (Lei nº 13.709/2018)`}
       />
       <InfoModal
         visible={isTermsVisible}
@@ -354,7 +395,7 @@ export default function ProfileScreen() {
         title="Termos de Serviço"
         subtitle="Regras e políticas do ReservaGO"
         sections={TERMS_SECTIONS}
-        footerText="Ao usar o ReservaGO, você concorda com estes termos. Dúvidas? contato@reservago.com.br"
+        footerText={`Ao usar o ReservaGO, você concorda com estes termos. Última revisão: ${LEGAL_UPDATED}. Dúvidas? Fale com ${LEGAL_CONTACT}.`}
       />
     </View>
   );
